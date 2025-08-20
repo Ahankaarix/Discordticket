@@ -1,6 +1,7 @@
-const { Client, GatewayIntentBits, Collection, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Events } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Events, AttachmentBuilder } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 // Configuration
@@ -232,6 +233,207 @@ const TICKET_CATEGORIES = {
         emoji: '💳'
     }
 };
+
+// HTML Transcript Generator
+function generateHTMLTranscript(ticket, messages, guild, closedBy) {
+    const categoryInfo = TICKET_CATEGORIES[ticket.category];
+    const categoryLabel = categoryInfo ? categoryInfo.label : 'Unknown';
+    
+    const messagesHTML = messages.map(msg => {
+        const timestamp = msg.createdAt.toLocaleString();
+        const author = msg.author.tag;
+        const avatar = msg.author.displayAvatarURL();
+        const content = msg.content || '[No text content]';
+        const isBot = msg.author.bot ? 'bot-message' : 'user-message';
+        
+        return `
+        <div class="message ${isBot}">
+            <img src="${avatar}" alt="${author}" class="avatar">
+            <div class="message-content">
+                <div class="message-header">
+                    <span class="author">${author}</span>
+                    <span class="timestamp">${timestamp}</span>
+                </div>
+                <div class="message-text">${content}</div>
+            </div>
+        </div>`;
+    }).join('\\n');
+
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ticket Transcript - ${ticket.id}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #36393f;
+            color: #dcddde;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: #2f3136;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #5865f2;
+        }
+        
+        .header h1 {
+            color: #5865f2;
+            margin-bottom: 10px;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .info-item {
+            background: #40444b;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        
+        .info-label {
+            color: #b9bbbe;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        
+        .info-value {
+            color: #ffffff;
+            font-weight: 500;
+        }
+        
+        .messages {
+            background: #2f3136;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        
+        .message {
+            display: flex;
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        
+        .user-message {
+            background: #40444b;
+        }
+        
+        .bot-message {
+            background: #36393f;
+            border-left: 3px solid #5865f2;
+        }
+        
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-right: 15px;
+        }
+        
+        .message-content {
+            flex: 1;
+        }
+        
+        .message-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        
+        .author {
+            font-weight: 600;
+            color: #ffffff;
+            margin-right: 10px;
+        }
+        
+        .timestamp {
+            font-size: 12px;
+            color: #72767d;
+        }
+        
+        .message-text {
+            color: #dcddde;
+            word-wrap: break-word;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            background: #2f3136;
+            border-radius: 8px;
+            color: #72767d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎫 Ticket Transcript</h1>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Ticket ID</div>
+                    <div class="info-value">${ticket.id}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Category</div>
+                    <div class="info-value">${categoryLabel}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Created</div>
+                    <div class="info-value">${new Date(ticket.created_at).toLocaleString()}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Closed</div>
+                    <div class="info-value">${new Date().toLocaleString()}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Closed By</div>
+                    <div class="info-value">${closedBy.user.tag}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Server</div>
+                    <div class="info-value">${guild.name}</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="messages">
+            <h2 style="margin-bottom: 20px; color: #ffffff;">💬 Conversation</h2>
+            ${messagesHTML}
+        </div>
+        
+        <div class="footer">
+            <p>Generated on ${new Date().toLocaleString()}</p>
+            <p>PCRP Ticket System - Discord Bot</p>
+        </div>
+    </div>
+</body>
+</html>`;
+}
 
 // Embed functions
 function createTicketPanelEmbed() {
@@ -501,11 +703,22 @@ async function handleTicketClose(interaction) {
         
         // Generate transcript
         const messages = await channel.messages.fetch({ limit: 100 });
-        const transcript = messages.reverse().map(msg => 
+        const sortedMessages = messages.reverse();
+        
+        // Generate plain text transcript
+        const transcript = sortedMessages.map(msg => 
             `[${msg.createdAt.toISOString()}] ${msg.author.tag}: ${msg.content}`
         ).join('\n');
         
-        // Save transcript
+        // Generate HTML transcript
+        const htmlTranscript = generateHTMLTranscript(ticket, sortedMessages, guild, member);
+        const fileName = `transcript-${ticket.id}.html`;
+        const filePath = path.join(__dirname, fileName);
+        
+        // Save HTML file
+        fs.writeFileSync(filePath, htmlTranscript);
+        
+        // Save transcript to database
         await saveTranscript(ticket.id, transcript);
         
         // Close ticket in database
@@ -517,6 +730,9 @@ async function handleTicketClose(interaction) {
             const user = await guild.members.fetch(ticket.user_id).catch(() => null);
             const claimedBy = ticket.claimed_by ? await guild.members.fetch(ticket.claimed_by).catch(() => null) : null;
             
+            // Create attachment for HTML transcript
+            const attachment = new AttachmentBuilder(filePath, { name: fileName });
+            
             await logsChannel.send({
                 content: `**Ticket Closed**\n` +
                         `**Ticket ID:** ${ticket.id}\n` +
@@ -525,7 +741,8 @@ async function handleTicketClose(interaction) {
                         `**Closed by:** ${member.toString()}\n` +
                         `**Category:** ${ticket.category}\n` +
                         `**Created:** ${ticket.created_at}\n` +
-                        `**Closed:** ${new Date().toISOString()}`
+                        `**Closed:** ${new Date().toISOString()}`,
+                files: [attachment]
             });
         }
         
@@ -534,6 +751,12 @@ async function handleTicketClose(interaction) {
             try {
                 await channel.delete();
                 console.log(`Ticket channel ${channel.name} deleted`);
+                
+                // Clean up HTML file after sending
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log(`Cleaned up transcript file: ${fileName}`);
+                }
             } catch (error) {
                 console.error('Error deleting ticket channel:', error);
             }
