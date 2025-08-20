@@ -13,6 +13,12 @@ Bot behavior: Single response only (no duplicate messages), proper feedback syst
 ## Bot Framework
 The bot is built on Discord.js v14 with a modular architecture using:
 - **Commands system**: Slash commands loaded dynamically from the `/commands` directory
+  - `/setup` - Create ticket panel in channel
+  - `/add` - Add user to ticket
+  - `/remove` - Remove user from ticket
+  - `/rename` - Rename ticket channel
+  - `/transfer` - Move ticket to different category
+  - `/transferadmin` - Notify specific admin about ticket
 - **Events system**: Event handlers loaded from the `/events` directory for clean separation of concerns
 - **Gateway intents**: Configured for guilds, messages, message content, and members to handle ticket interactions
 
@@ -47,8 +53,8 @@ The bot is built on Discord.js v14 with a modular architecture using:
 - **Ready event**: Bot initialization, ticket panel setup, and reconnection to existing tickets
 - **Automatic synchronization**: Runs every 5 minutes to keep Discord channels and database in sync
 - **Real-time reconnection**: Auto-reconnects when ticket validation fails during operations
-- **Feedback system**: Handles star ratings, text feedback modals, and automatic channel forwarding
-- **Error handling**: Comprehensive try-catch blocks with interaction reply checks to prevent double-acknowledgment errors
+- **Feedback system**: Star ratings open modal for comments (no required text), combined rating+comment posts
+- **Error handling**: Comprehensive try-catch blocks with proper defer/edit reply handling to prevent interaction errors
 
 ## Utility Modules
 - **Embed generator**: Standardized embed creation for consistent UI/UX

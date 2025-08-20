@@ -1179,14 +1179,13 @@ async function handleTicketCreation(interaction) {
             channel.topic.includes(user.id)
         );
         
+        await interaction.deferReply({ ephemeral: true });
+        
         if (existingTickets.size > 0) {
-            return await interaction.reply({
-                content: '❌ You already have an open ticket! Please close your existing ticket before creating a new one.',
-                ephemeral: true
+            return await interaction.editReply({
+                content: '❌ You already have an open ticket! Please close your existing ticket before creating a new one.'
             });
         }
-        
-        await interaction.deferReply({ ephemeral: true });
         
         const ticket = await createTicket(guild, user, category);
         
@@ -1201,9 +1200,16 @@ async function handleTicketCreation(interaction) {
         }
     } catch (error) {
         console.error('Ticket creation error:', error);
-        await interaction.editReply({
-            content: '❌ An error occurred while creating your ticket.'
-        });
+        if (interaction.deferred && !interaction.replied) {
+            await interaction.editReply({
+                content: '❌ An error occurred while creating your ticket.'
+            });
+        } else if (!interaction.replied) {
+            await interaction.reply({
+                content: '❌ An error occurred while creating your ticket.',
+                ephemeral: true
+            });
+        }
     }
 }
 
