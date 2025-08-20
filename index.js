@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Collection, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Events, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Events, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, REST, Routes } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
@@ -1301,459 +1301,24 @@ const client = new Client({
 // Initialize collections
 client.commands = new Collection();
 
-// Setup command
-const setupCommand = {
-    data: new SlashCommandBuilder()
-        .setName('setup')
-        .setDescription('Setup the ticket system in this channel')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    
-    async execute(interaction) {
-        try {
-            await interaction.deferReply({ ephemeral: true });
-            
-            const success = await createTicketPanel(interaction.channel, interaction.guild);
-            
-            if (success) {
-                await interaction.editReply({
-                    content: '✅ Ticket system has been successfully set up in this channel!'
-                });
-            } else {
-                await interaction.editReply({
-                    content: '❌ Failed to set up ticket system. Please try again.'
-                });
-            }
-        } catch (error) {
-            console.error('Setup command error:', error);
-            await interaction.editReply({
-                content: '❌ An error occurred while setting up the ticket system.'
-            });
-        }
-    }
-};
+// Load commands from files
+const commandsPath = path.join(__dirname, 'commands');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
 
-// Add user to ticket command
-const addCommand = {
-    data: new SlashCommandBuilder()
-        .setName('add')
-        .setDescription('Add a user to this ticket')
-        .addUserOption(option =>
-            option.setName('user')
-                .setDescription('The user to add to this ticket')
-                .setRequired(true))
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    
-    async execute(interaction) {
-        try {
-            const guild = interaction.guild;
-            const member = interaction.member;
-            const channel = interaction.channel;
-            const userToAdd = interaction.options.getUser('user');
-            
-            // Check if user has admin role
-            const adminRole = guild.roles.cache.get(config.adminRoleId);
-            if (!adminRole || !member.roles.cache.has(adminRole.id)) {
-                return await interaction.reply({
-                    content: '❌ You do not have permission to add users to tickets.',
-                    ephemeral: true
-                });
-            }
-            
-            // Check if this is a ticket channel
-            const ticket = await getTicket(channel.id);
-            if (!ticket) {
-                return await interaction.reply({
-                    content: '❌ This command can only be used in ticket channels.',
-                    ephemeral: true
-                });
-            }
-            
-            // Add user to ticket channel with messaging permissions
-            await channel.permissionOverwrites.edit(userToAdd.id, {
-                ViewChannel: true,
-                SendMessages: true,
-                ReadMessageHistory: true
-            });
-            
-            await interaction.reply({
-                content: `✅ ${userToAdd.toString()} has been added to this ticket!`
-            });
-            
-            console.log(`User ${userToAdd.tag} added to ticket ${ticket.id} by ${member.user.tag}`);
-            
-        } catch (error) {
-            console.error('Add command error:', error);
-            await interaction.reply({
-                content: '❌ An error occurred while adding the user to this ticket.',
-                ephemeral: true
-            });
-        }
-    }
-};
-
-// Remove user from ticket command
-const removeCommand = {
-    data: new SlashCommandBuilder()
-        .setName('remove')
-        .setDescription('Remove a user from this ticket')
-        .addUserOption(option =>
-            option.setName('user')
-                .setDescription('The user to remove from this ticket')
-                .setRequired(true))
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    
-    async execute(interaction) {
-        try {
-            const guild = interaction.guild;
-            const member = interaction.member;
-            const channel = interaction.channel;
-            const userToRemove = interaction.options.getUser('user');
-            
-            // Check if user has admin role
-            const adminRole = guild.roles.cache.get(config.adminRoleId);
-            if (!adminRole || !member.roles.cache.has(adminRole.id)) {
-                return await interaction.reply({
-                    content: '❌ You do not have permission to remove users from tickets.',
-                    ephemeral: true
-                });
-            }
-            
-            // Check if this is a ticket channel
-            const ticket = await getTicket(channel.id);
-            if (!ticket) {
-                return await interaction.reply({
-                    content: '❌ This command can only be used in ticket channels.',
-                    ephemeral: true
-                });
-            }
-            
-            // Don't allow removing the ticket creator
-            if (userToRemove.id === ticket.user_id) {
-                return await interaction.reply({
-                    content: '❌ You cannot remove the ticket creator from their own ticket.',
-                    ephemeral: true
-                });
-            }
-            
-            // Remove user's permissions from ticket channel
-            await channel.permissionOverwrites.delete(userToRemove.id);
-            
-            await interaction.reply({
-                content: `✅ ${userToRemove.toString()} has been removed from this ticket!`
-            });
-            
-            console.log(`User ${userToRemove.tag} removed from ticket ${ticket.id} by ${member.user.tag}`);
-            
-        } catch (error) {
-            console.error('Remove command error:', error);
-            await interaction.reply({
-                content: '❌ An error occurred while removing the user from this ticket.',
-                ephemeral: true
-            });
-        }
-    }
-};
-
-// Rename ticket command
-const renameCommand = {
-    data: new SlashCommandBuilder()
-        .setName('rename')
-        .setDescription('Rename this ticket channel')
-        .addStringOption(option =>
-            option.setName('name')
-                .setDescription('New name for the ticket')
-                .setRequired(true))
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    
-    async execute(interaction) {
-        try {
-            const guild = interaction.guild;
-            const member = interaction.member;
-            const channel = interaction.channel;
-            const newName = interaction.options.getString('name');
-            
-            // Check if user has admin role
-            const adminRole = guild.roles.cache.get(config.adminRoleId);
-            if (!adminRole || !member.roles.cache.has(adminRole.id)) {
-                return await interaction.reply({
-                    content: '❌ You do not have permission to rename tickets.',
-                    ephemeral: true
-                });
-            }
-            
-            // Check if this is a ticket channel
-            const ticket = await getTicket(channel.id);
-            if (!ticket) {
-                return await interaction.reply({
-                    content: '❌ This command can only be used in ticket channels.',
-                    ephemeral: true
-                });
-            }
-            
-            // Clean the name for Discord channel naming rules
-            const cleanName = newName.toLowerCase().replace(/[^a-z0-9-]/g, '-').substring(0, 50);
-            
-            // Rename the channel
-            await channel.setName(cleanName);
-            
-            await interaction.reply({
-                content: `✅ Ticket renamed to: **${cleanName}**`
-            });
-            
-            console.log(`Ticket ${ticket.id} renamed to ${cleanName} by ${member.user.tag}`);
-            
-        } catch (error) {
-            console.error('Rename command error:', error);
-            await interaction.reply({
-                content: '❌ An error occurred while renaming the ticket.',
-                ephemeral: true
-            });
-        }
-    }
-};
-
-// Transfer ticket command
-const transferCommand = {
-    data: new SlashCommandBuilder()
-        .setName('transfer')
-        .setDescription('Transfer this ticket to a different category')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    
-    async execute(interaction) {
-        try {
-            const guild = interaction.guild;
-            const member = interaction.member;
-            const channel = interaction.channel;
-            
-            // Check if user has admin role
-            const adminRole = guild.roles.cache.get(config.adminRoleId);
-            if (!adminRole || !member.roles.cache.has(adminRole.id)) {
-                return await interaction.reply({
-                    content: '❌ You do not have permission to transfer tickets.',
-                    ephemeral: true
-                });
-            }
-            
-            // Check if this is a ticket channel
-            const ticket = await getTicket(channel.id);
-            if (!ticket) {
-                return await interaction.reply({
-                    content: '❌ This command can only be used in ticket channels.',
-                    ephemeral: true
-                });
-            }
-            
-            // Create select menu with all categories except current one
-            const options = Object.entries(TICKET_CATEGORIES)
-                .filter(([value, category]) => value !== ticket.category)
-                .map(([value, category]) => ({
-                    label: category.label,
-                    description: category.description,
-                    value: value,
-                    emoji: category.emoji
-                }));
-            
-            if (options.length === 0) {
-                return await interaction.reply({
-                    content: '❌ No other categories available to transfer to.',
-                    ephemeral: true
-                });
-            }
-            
-            const selectMenu = new StringSelectMenuBuilder()
-                .setCustomId('transfer_category')
-                .setPlaceholder('Select new category for this ticket...')
-                .addOptions(options);
-            
-            const row = new ActionRowBuilder()
-                .addComponents(selectMenu);
-            
-            const currentCategory = TICKET_CATEGORIES[ticket.category];
-            
-            await interaction.reply({
-                content: `🔄 **Transfer Ticket**\n\nCurrent category: **${currentCategory ? currentCategory.label : 'Unknown'}**\nSelect a new category from the menu below:`,
-                components: [row],
-                ephemeral: true
-            });
-            
-        } catch (error) {
-            console.error('Transfer command error:', error);
-            await interaction.reply({
-                content: '❌ An error occurred while setting up the transfer.',
-                ephemeral: true
-            });
-        }
-    }
-};
-
-// Transfer admin command - notify specific admin about ticket
-const transferAdminCommand = {
-    data: new SlashCommandBuilder()
-        .setName('transferadmin')
-        .setDescription('Notify a specific admin about this ticket via DM')
-        .addUserOption(option =>
-            option.setName('admin')
-                .setDescription('The admin to notify about this ticket')
-                .setRequired(true))
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    
-    async execute(interaction) {
-        try {
-            const guild = interaction.guild;
-            const member = interaction.member;
-            const channel = interaction.channel;
-            const targetAdmin = interaction.options.getUser('admin');
-            
-            // Check if user has admin role
-            const adminRole = guild.roles.cache.get(config.adminRoleId);
-            if (!adminRole || !member.roles.cache.has(adminRole.id)) {
-                return await interaction.reply({
-                    content: '❌ You do not have permission to transfer tickets to admins.',
-                    ephemeral: true
-                });
-            }
-            
-            // Check if this is a ticket channel
-            const ticket = await getTicket(channel.id);
-            if (!ticket) {
-                return await interaction.reply({
-                    content: '❌ This command can only be used in ticket channels.',
-                    ephemeral: true
-                });
-            }
-            
-            // Get target admin as guild member
-            const targetMember = await guild.members.fetch(targetAdmin.id).catch(() => null);
-            if (!targetMember) {
-                return await interaction.reply({
-                    content: '❌ Could not find that user in this server.',
-                    ephemeral: true
-                });
-            }
-            
-            // Check if target user is an admin
-            if (!targetMember.roles.cache.has(adminRole.id)) {
-                return await interaction.reply({
-                    content: '❌ The specified user does not have admin permissions.',
-                    ephemeral: true
-                });
-            }
-            
-            // Get ticket details
-            const ticketCreator = await guild.members.fetch(ticket.user_id).catch(() => null);
-            const categoryInfo = TICKET_CATEGORIES[ticket.category];
-            const claimedBy = ticket.claimed_by ? await guild.members.fetch(ticket.claimed_by).catch(() => null) : null;
-            
-            // Send DM to target admin
-            try {
-                await targetAdmin.send({
-                    content: `🚨 **Ticket Transfer Notification**\n\n` +
-                            `Hello ${targetAdmin.username}! You have been assigned to handle a support ticket.\n\n` +
-                            `**Ticket Information:**\n` +
-                            `• **Channel:** ${channel.toString()} - [Jump to Ticket](https://discord.com/channels/${guild.id}/${channel.id})\n` +
-                            `• **Ticket ID:** ${ticket.id}\n` +
-                            `• **Category:** ${categoryInfo ? categoryInfo.label : 'Unknown'} ${categoryInfo ? categoryInfo.emoji : ''}\n` +
-                            `• **Created by:** ${ticketCreator ? ticketCreator.user.tag : 'Unknown User'}\n` +
-                            `• **Currently claimed by:** ${claimedBy ? claimedBy.user.tag : 'Unclaimed'}\n` +
-                            `• **Transferred by:** ${member.user.tag}\n` +
-                            `• **Server:** ${guild.name}\n` +
-                            `• **Created:** ${new Date(ticket.created_at).toLocaleString()}\n\n` +
-                            `🔗 **Direct Link:** https://discord.com/channels/${guild.id}/${channel.id}\n\n` +
-                            `Please click the link above or use the channel mention to access the ticket and provide assistance.`
-                });
-                
-                // Add the notified admin to the ticket channel
-                await channel.permissionOverwrites.edit(targetAdmin.id, {
-                    ViewChannel: true,
-                    SendMessages: true,
-                    ReadMessageHistory: true,
-                    ManageMessages: true
-                });
-                
-                await interaction.reply({
-                    content: `✅ **Admin Notified Successfully**\n\n` +
-                            `${targetAdmin.toString()} has been:\n` +
-                            `• Sent a DM with ticket details and direct link\n` +
-                            `• Added to this ticket channel with full permissions\n` +
-                            `• Provided with all necessary information to assist`
-                });
-                
-                // Send notification in ticket
-                await channel.send({
-                    content: `📢 **Admin Transfer Notification**\n\n` +
-                            `${targetAdmin.toString()} has been notified about this ticket by ${member.toString()} and added to provide assistance.`
-                });
-                
-                console.log(`Ticket ${ticket.id} transferred to admin ${targetAdmin.tag} by ${member.user.tag}`);
-                
-            } catch (dmError) {
-                console.log(`Could not send DM to ${targetAdmin.tag}: ${dmError.message}`);
-                
-                // Still add them to the channel even if DM fails
-                await channel.permissionOverwrites.edit(targetAdmin.id, {
-                    ViewChannel: true,
-                    SendMessages: true,
-                    ReadMessageHistory: true,
-                    ManageMessages: true
-                });
-                
-                await interaction.reply({
-                    content: `⚠️ **Partial Success**\n\n` +
-                            `${targetAdmin.toString()} has been added to this ticket but could not receive a DM notification.\n` +
-                            `**Reason:** ${dmError.message}\n\n` +
-                            `They now have access to this channel and can provide assistance.`
-                });
-                
-                // Notify in channel about the DM failure
-                await channel.send({
-                    content: `📢 **Admin Added to Ticket**\n\n` +
-                            `${targetAdmin.toString()} has been added to this ticket by ${member.toString()}. ` +
-                            `(DM notification failed - they may have DMs disabled)`
-                });
-            }
-            
-        } catch (error) {
-            console.error('Transfer admin command error:', error);
-            await interaction.reply({
-                content: '❌ An error occurred while transferring the ticket to the admin.',
-                ephemeral: true
-            });
-        }
-    }
-};
-
-// Automatic reconnection system
-let autoReconnectInterval = null;
-
-function startAutoReconnect(client) {
-    // Clear any existing interval
-    if (autoReconnectInterval) {
-        clearInterval(autoReconnectInterval);
-    }
-    
-    // Run reconnection every 5 minutes
-    autoReconnectInterval = setInterval(async () => {
-        try {
-            const guild = client.guilds.cache.get(config.guildId);
-            if (guild) {
-                console.log('🔄 Running automatic ticket synchronization...');
-                await reconnectToTickets(client, guild);
-            }
-        } catch (error) {
-            console.error('Auto-reconnect error:', error);
-        }
-    }, 5 * 60 * 1000); // 5 minutes
-    
-    console.log('✅ Automatic ticket synchronization started (runs every 5 minutes)');
-}
-
-function stopAutoReconnect() {
-    if (autoReconnectInterval) {
-        clearInterval(autoReconnectInterval);
-        autoReconnectInterval = null;
-        console.log('🛑 Automatic ticket synchronization stopped');
+const commands = [];
+for (const file of commandFiles) {
+    const filePath = path.join(commandsPath, file);
+    const command = require(filePath);
+    if ('data' in command && 'execute' in command) {
+        client.commands.set(command.data.name, command);
+        commands.push(command.data.toJSON());
+        console.log(`Loaded command: ${command.data.name}`);
+    } else {
+        console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
     }
 }
+
+// All commands are now loaded from the /commands directory
 
 // Trigger reconnection when ticket not found
 async function autoReconnectOnError(client, channelId) {
@@ -1773,16 +1338,26 @@ async function autoReconnectOnError(client, channelId) {
     return false;
 }
 
-client.commands.set(setupCommand.data.name, setupCommand);
-client.commands.set(addCommand.data.name, addCommand);
-client.commands.set(removeCommand.data.name, removeCommand);
-client.commands.set(renameCommand.data.name, renameCommand);
-client.commands.set(transferCommand.data.name, transferCommand);
-client.commands.set(transferAdminCommand.data.name, transferAdminCommand);
+// Commands are now loaded from files above
 
 // Ready event
 client.once(Events.ClientReady, async (client) => {
     console.log(`Ready! Logged in as ${client.user.tag}`);
+    
+    // Register slash commands with Discord
+    try {
+        console.log('Started refreshing application (/) commands.');
+        
+        const rest = new REST().setToken(process.env.DISCORD_TOKEN);
+        await rest.put(
+            Routes.applicationGuildCommands(client.user.id, config.guildId),
+            { body: commands }
+        );
+        
+        console.log('Successfully reloaded application (/) commands.');
+    } catch (error) {
+        console.error('Error registering slash commands:', error);
+    }
     
     try {
         // Get the specified guild and channels from config
@@ -1806,8 +1381,14 @@ client.once(Events.ClientReady, async (client) => {
         console.log('Reconnecting to open tickets...');
         await reconnectToTickets(client, guild);
         
-        // Start automatic reconnection system
-        startAutoReconnect(client);
+        // Start automatic reconnection system (every 5 minutes)
+        setInterval(async () => {
+            try {
+                await reconnectToTickets(client, guild);
+            } catch (error) {
+                console.error('Auto-reconnect failed:', error);
+            }
+        }, 5 * 60 * 1000);
         
         console.log('Bot initialization complete!');
         

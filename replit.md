@@ -2,6 +2,11 @@
 
 This is a Discord ticket system bot built with Discord.js v14 and SQLite. The bot provides a comprehensive support ticket management system where users can create tickets by selecting from predefined categories, and staff members can claim and manage these tickets. The system includes features like automatic ticket cleanup, transcript generation, user feedback collection system, and role-based permissions.
 
+## Recent Changes (December 2024)
+- **Command Registration System**: Successfully migrated from hardcoded commands to file-based command loading with Discord API registration
+- **Slash Commands Working**: All 6 slash commands (/setup, /add, /remove, /rename, /transfer, /transferadmin) now properly registered and available in Discord
+- **Bot Connection**: Bot connects as "PCRP TICKET#5559" with full functionality restored
+
 # User Preferences
 
 Preferred communication style: Simple, everyday language.
