@@ -750,15 +750,16 @@ async function handleTicketClose(interaction) {
         // Close ticket in database
         await closeTicket(channel.id);
         
+        // Get ticket creator for DM and logs
+        const user = await guild.members.fetch(ticket.user_id).catch(() => null);
+        const claimedBy = ticket.claimed_by ? await guild.members.fetch(ticket.claimed_by).catch(() => null) : null;
+        
+        // Create attachment for HTML transcript
+        const attachment = new AttachmentBuilder(filePath, { name: fileName });
+        
         // Send transcript to logs channel if configured
         const logsChannel = guild.channels.cache.get(config.logsChannelId);
         if (logsChannel) {
-            const user = await guild.members.fetch(ticket.user_id).catch(() => null);
-            const claimedBy = ticket.claimed_by ? await guild.members.fetch(ticket.claimed_by).catch(() => null) : null;
-            
-            // Create attachment for HTML transcript
-            const attachment = new AttachmentBuilder(filePath, { name: fileName });
-            
             await logsChannel.send({
                 content: `**Ticket Closed**\n` +
                         `**Ticket ID:** ${ticket.id}\n` +
@@ -770,6 +771,41 @@ async function handleTicketClose(interaction) {
                         `**Closed:** ${new Date().toISOString()}`,
                 files: [attachment]
             });
+        }
+        
+        // Send transcript copy to ticket creator via DM
+        if (user) {
+            try {
+                const categoryInfo = TICKET_CATEGORIES[ticket.category];
+                const userAttachment = new AttachmentBuilder(filePath, { name: fileName });
+                
+                await user.user.send({
+                    content: `🎫 **Your Support Ticket Transcript**\n\n` +
+                            `Hello ${user.user.username}! Your support ticket has been closed.\n\n` +
+                            `**Ticket Details:**\n` +
+                            `• **Ticket ID:** ${ticket.id}\n` +
+                            `• **Category:** ${categoryInfo ? categoryInfo.label : 'Unknown'} ${categoryInfo ? categoryInfo.emoji : ''}\n` +
+                            `• **Closed by:** ${member.user.tag}\n` +
+                            `• **Date:** ${new Date().toLocaleDateString()}\n\n` +
+                            `📎 **Attached:** Complete conversation transcript\n\n` +
+                            `Thank you for using PCRP Support! If you need further assistance, feel free to create a new ticket.`,
+                    files: [userAttachment]
+                });
+                
+                console.log(`Transcript DM sent successfully to ${user.user.tag}`);
+            } catch (dmError) {
+                console.log(`Could not send transcript DM to ${user.user.tag}: ${dmError.message}`);
+                // Try to inform in logs channel that DM failed
+                if (logsChannel) {
+                    try {
+                        await logsChannel.send({
+                            content: `⚠️ **DM Failed** - Could not send transcript to ${user.toString()}: ${dmError.message}`
+                        });
+                    } catch (logError) {
+                        console.log('Failed to log DM error:', logError.message);
+                    }
+                }
+            }
         }
         
         // Delete channel after a short delay
