@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Collection, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Events, AttachmentBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, Events, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
@@ -10,6 +10,7 @@ const config = {
     ticketChannelId: "1407656785564930068",
     logsChannelId: "1407656810453663754",
     adminRoleId: "1407657166114127962",
+    feedbackChannelId: "1407668519990067200",
     ticketCategoryId: null,
     maxTicketsPerUser: 1,
     autoDeleteAfterClose: 5000,
@@ -62,6 +63,18 @@ function initializeDatabase() {
                     CREATE TABLE IF NOT EXISTS transcripts (
                         ticket_id TEXT PRIMARY KEY,
                         content TEXT NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                `);
+                
+                // Feedback table
+                db.run(`
+                    CREATE TABLE IF NOT EXISTS feedback (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ticket_id TEXT NOT NULL,
+                        user_id TEXT NOT NULL,
+                        rating INTEGER,
+                        comment TEXT,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                     )
                 `);
@@ -206,6 +219,25 @@ function updateTicketCategory(channelId, newCategory) {
                 reject(err);
             } else {
                 resolve(this.changes > 0);
+            }
+        });
+        
+        stmt.finalize();
+    });
+}
+
+function saveFeedback(ticketId, userId, rating, comment) {
+    return new Promise((resolve, reject) => {
+        const stmt = db.prepare(`
+            INSERT INTO feedback (ticket_id, user_id, rating, comment)
+            VALUES (?, ?, ?, ?)
+        `);
+        
+        stmt.run([ticketId, userId, rating, comment], function(err) {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(this.lastID);
             }
         });
         
@@ -779,6 +811,43 @@ async function handleTicketClose(interaction) {
                 const categoryInfo = TICKET_CATEGORIES[ticket.category];
                 const userAttachment = new AttachmentBuilder(filePath, { name: fileName });
                 
+                // Create feedback buttons
+                const star1 = new ButtonBuilder()
+                    .setCustomId(`feedback_1_${ticket.id}`)
+                    .setLabel('1⭐')
+                    .setStyle(ButtonStyle.Secondary);
+                
+                const star2 = new ButtonBuilder()
+                    .setCustomId(`feedback_2_${ticket.id}`)
+                    .setLabel('2⭐')
+                    .setStyle(ButtonStyle.Secondary);
+                
+                const star3 = new ButtonBuilder()
+                    .setCustomId(`feedback_3_${ticket.id}`)
+                    .setLabel('3⭐')
+                    .setStyle(ButtonStyle.Secondary);
+                
+                const star4 = new ButtonBuilder()
+                    .setCustomId(`feedback_4_${ticket.id}`)
+                    .setLabel('4⭐')
+                    .setStyle(ButtonStyle.Secondary);
+                
+                const star5 = new ButtonBuilder()
+                    .setCustomId(`feedback_5_${ticket.id}`)
+                    .setLabel('5⭐')
+                    .setStyle(ButtonStyle.Success);
+                
+                const feedbackRow = new ActionRowBuilder()
+                    .addComponents(star1, star2, star3, star4, star5);
+                
+                const textFeedbackButton = new ButtonBuilder()
+                    .setCustomId(`feedback_text_${ticket.id}`)
+                    .setLabel('📝 Add Comment')
+                    .setStyle(ButtonStyle.Primary);
+                
+                const textRow = new ActionRowBuilder()
+                    .addComponents(textFeedbackButton);
+                
                 await user.user.send({
                     content: `🎫 **Your Support Ticket Transcript**\n\n` +
                             `Hello ${user.user.username}! Your support ticket has been closed.\n\n` +
@@ -788,8 +857,10 @@ async function handleTicketClose(interaction) {
                             `• **Closed by:** ${member.user.tag}\n` +
                             `• **Date:** ${new Date().toLocaleDateString()}\n\n` +
                             `📎 **Attached:** Complete conversation transcript\n\n` +
+                            `💭 **How was our support?** Please rate your experience:\n\n` +
                             `Thank you for using PCRP Support! If you need further assistance, feel free to create a new ticket.`,
-                    files: [userAttachment]
+                    files: [userAttachment],
+                    components: [feedbackRow, textRow]
                 });
                 
                 console.log(`Transcript DM sent successfully to ${user.user.tag}`);
@@ -1460,6 +1531,110 @@ client.once(Events.ClientReady, async (client) => {
     }
 });
 
+// Feedback handling functions
+async function handleFeedback(interaction) {
+    const [prefix, rating, ticketId] = interaction.customId.split('_');
+    
+    try {
+        if (prefix === 'feedback' && rating && rating !== 'text') {
+            // Star rating feedback
+            const ratingNum = parseInt(rating);
+            
+            // Save feedback to database
+            await saveFeedback(ticketId, interaction.user.id, ratingNum, null);
+            
+            // Send to feedback channel
+            const feedbackChannel = client.channels.cache.get(config.feedbackChannelId);
+            if (feedbackChannel) {
+                await feedbackChannel.send({
+                    embeds: [{
+                        title: '⭐ Star Rating Feedback',
+                        color: 0x00ff00,
+                        fields: [
+                            { name: '🎫 Ticket ID', value: ticketId, inline: true },
+                            { name: '👤 User', value: interaction.user.tag, inline: true },
+                            { name: '⭐ Rating', value: `${ratingNum}/5 stars`, inline: true }
+                        ],
+                        timestamp: new Date(),
+                        footer: { text: 'PCRP Support Feedback System' }
+                    }]
+                });
+            }
+            
+            await interaction.reply({
+                content: `✅ Thank you for your feedback! You rated our support **${ratingNum}/5 stars**.\n\nWe appreciate your time and will use this feedback to improve our service.`,
+                ephemeral: true
+            });
+            
+        } else if (prefix === 'feedback' && rating === 'text') {
+            // Text feedback - show modal
+            const modal = new ModalBuilder()
+                .setCustomId(`feedback_modal_${ticketId}`)
+                .setTitle('Share Your Feedback');
+                
+            const feedbackInput = new TextInputBuilder()
+                .setCustomId('feedback_comment')
+                .setLabel('How was your support experience?')
+                .setPlaceholder('Please share your thoughts about the support you received...')
+                .setStyle(TextInputStyle.Paragraph)
+                .setMinLength(10)
+                .setMaxLength(1000)
+                .setRequired(true);
+                
+            const firstActionRow = new ActionRowBuilder().addComponents(feedbackInput);
+            modal.addComponents(firstActionRow);
+            
+            await interaction.showModal(modal);
+        }
+    } catch (error) {
+        console.error('Feedback handling error:', error);
+        await interaction.reply({
+            content: '❌ There was an error processing your feedback. Please try again later.',
+            ephemeral: true
+        });
+    }
+}
+
+async function handleFeedbackModal(interaction) {
+    const ticketId = interaction.customId.replace('feedback_modal_', '');
+    const comment = interaction.fields.getTextInputValue('feedback_comment');
+    
+    try {
+        // Save feedback to database
+        await saveFeedback(ticketId, interaction.user.id, null, comment);
+        
+        // Send to feedback channel
+        const feedbackChannel = client.channels.cache.get(config.feedbackChannelId);
+        if (feedbackChannel) {
+            await feedbackChannel.send({
+                embeds: [{
+                    title: '📝 Written Feedback',
+                    color: 0x0099ff,
+                    fields: [
+                        { name: '🎫 Ticket ID', value: ticketId, inline: true },
+                        { name: '👤 User', value: interaction.user.tag, inline: true },
+                        { name: '💬 Comment', value: comment.length > 1000 ? comment.substring(0, 997) + '...' : comment, inline: false }
+                    ],
+                    timestamp: new Date(),
+                    footer: { text: 'PCRP Support Feedback System' }
+                }]
+            });
+        }
+        
+        await interaction.reply({
+            content: `✅ Thank you for your detailed feedback!\n\n**Your comment:**\n> ${comment}\n\nWe appreciate your time and will use this feedback to improve our service.`,
+            ephemeral: true
+        });
+        
+    } catch (error) {
+        console.error('Feedback modal handling error:', error);
+        await interaction.reply({
+            content: '❌ There was an error saving your feedback. Please try again later.',
+            ephemeral: true
+        });
+    }
+}
+
 // Interaction event
 client.on(Events.InteractionCreate, async (interaction) => {
     try {
@@ -1490,6 +1665,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 await handleTicketClaim(interaction);
             } else if (interaction.customId === 'close_ticket') {
                 await handleTicketClose(interaction);
+            } else if (interaction.customId.startsWith('feedback_')) {
+                await handleFeedback(interaction);
+            }
+        }
+        
+        // Handle modal submissions
+        else if (interaction.isModalSubmit()) {
+            if (interaction.customId.startsWith('feedback_modal_')) {
+                await handleFeedbackModal(interaction);
             }
         }
     } catch (error) {

@@ -1,6 +1,6 @@
 # Overview
 
-This is a Discord ticket system bot built with Discord.js v14 and SQLite. The bot provides a comprehensive support ticket management system where users can create tickets by selecting from predefined categories, and staff members can claim and manage these tickets. The system includes features like automatic ticket cleanup, transcript generation, and role-based permissions.
+This is a Discord ticket system bot built with Discord.js v14 and SQLite. The bot provides a comprehensive support ticket management system where users can create tickets by selecting from predefined categories, and staff members can claim and manage these tickets. The system includes features like automatic ticket cleanup, transcript generation, user feedback collection system, and role-based permissions.
 
 # User Preferences
 
@@ -16,10 +16,11 @@ The bot is built on Discord.js v14 with a modular architecture using:
 
 ## Database Layer
 - **SQLite database**: Local file-based storage using sqlite3 for persistent data
-- **Three main tables**:
+- **Four main tables**:
   - `tickets`: Stores ticket metadata (ID, channel, user, status, timestamps)
   - `ticket_panels`: Tracks ticket creation panels in guilds
   - `transcripts`: Stores ticket conversation history
+  - `feedback`: Stores user feedback with star ratings and comments
 - **Database initialization**: Automatic table creation on startup with proper schema
 
 ## Ticket Management System
@@ -28,15 +29,19 @@ The bot is built on Discord.js v14 with a modular architecture using:
 - **Permission system**: Role-based access control using admin roles defined in config
 - **Automatic cleanup**: Configurable auto-deletion of closed tickets after specified time
 - **Transcript generation**: Conversation history saved before ticket deletion
+- **User feedback system**: Star ratings (1-5) and text comments collected when tickets close
+- **DM notifications**: Transcript delivery with interactive feedback collection buttons
 
 ## Configuration Management
-- **JSON-based config**: Centralized configuration for guild IDs, channel IDs, role permissions
+- **JSON-based config**: Centralized configuration for guild IDs, channel IDs, role permissions, feedback channel
 - **Environment variables**: Bot token and sensitive data stored in .env file
 - **Flexible limits**: Configurable maximum tickets per user and auto-delete timers
+- **Channel routing**: Automatic feedback routing to designated feedback channel (ID: 1407668519990067200)
 
 ## Event Handling Architecture
-- **Interaction router**: Single interaction handler that routes slash commands, select menus, and button interactions
+- **Interaction router**: Single interaction handler that routes slash commands, select menus, button interactions, and modal submissions
 - **Ready event**: Bot initialization, ticket panel setup, and reconnection to existing tickets
+- **Feedback system**: Handles star ratings, text feedback modals, and automatic channel forwarding
 - **Error handling**: Comprehensive try-catch blocks with user-friendly error messages
 
 ## Utility Modules
