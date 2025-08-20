@@ -5,6 +5,8 @@ This is a Discord ticket system bot built with Discord.js v14 and SQLite. The bo
 # User Preferences
 
 Preferred communication style: Simple, everyday language.
+Ticket naming format: pcrp-username-category-### (simple 3-digit counter, no long timestamps)
+Bot behavior: Single response only (no duplicate messages), proper feedback system handling
 
 # System Architecture
 

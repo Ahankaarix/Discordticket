@@ -637,7 +637,15 @@ async function createTicket(guild, user, category) {
             'billing': 'billing'
         }[category] || 'general';
         
-        const ticketId = `pcrp-${user.username}-${categoryShortName}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        // Generate a simple counter-based ticket ID
+        const existingTickets = await new Promise((resolve, reject) => {
+            db.all("SELECT COUNT(*) as count FROM tickets WHERE user_id = ?", [user.id], (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows[0].count);
+            });
+        });
+        const ticketNumber = (existingTickets + 1).toString().padStart(3, '0');
+        const ticketId = `pcrp-${user.username}-${categoryShortName}-${ticketNumber}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
         
         // Get admin role
         const adminRole = guild.roles.cache.get(config.adminRoleId);
@@ -1817,6 +1825,8 @@ async function handleFeedback(interaction) {
             // Star rating feedback
             const ratingNum = parseInt(rating);
             
+            await interaction.deferReply({ ephemeral: true });
+            
             // Save feedback to database
             await saveFeedback(ticketId, interaction.user.id, ratingNum, null);
             
@@ -1838,9 +1848,8 @@ async function handleFeedback(interaction) {
                 });
             }
             
-            await interaction.reply({
-                content: `✅ Thank you for your feedback! You rated our support **${ratingNum}/5 stars**.\n\nWe appreciate your time and will use this feedback to improve our service.`,
-                ephemeral: true
+            await interaction.editReply({
+                content: `✅ Thank you for your feedback! You rated our support **${ratingNum}/5 stars**.\n\nWe appreciate your time and will use this feedback to improve our service.`
             });
             
         } else if (prefix === 'feedback' && rating === 'text') {
@@ -1877,6 +1886,8 @@ async function handleFeedbackModal(interaction) {
     const comment = interaction.fields.getTextInputValue('feedback_comment');
     
     try {
+        await interaction.deferReply({ ephemeral: true });
+        
         // Save feedback to database
         await saveFeedback(ticketId, interaction.user.id, null, comment);
         
@@ -1898,17 +1909,22 @@ async function handleFeedbackModal(interaction) {
             });
         }
         
-        await interaction.reply({
-            content: `✅ Thank you for your detailed feedback!\n\n**Your comment:**\n> ${comment}\n\nWe appreciate your time and will use this feedback to improve our service.`,
-            ephemeral: true
+        await interaction.editReply({
+            content: `✅ Thank you for your detailed feedback!\n\n**Your comment:**\n> ${comment}\n\nWe appreciate your time and will use this feedback to improve our service.`
         });
         
     } catch (error) {
         console.error('Feedback modal handling error:', error);
-        await interaction.reply({
-            content: '❌ There was an error saving your feedback. Please try again later.',
-            ephemeral: true
-        });
+        if (interaction.deferred) {
+            await interaction.editReply({
+                content: '❌ There was an error saving your feedback. Please try again later.'
+            });
+        } else {
+            await interaction.reply({
+                content: '❌ There was an error saving your feedback. Please try again later.',
+                ephemeral: true
+            });
+        }
     }
 }
 
@@ -1928,9 +1944,19 @@ async function sendAutoResponse(channel, user, category) {
     if (response) {
         setTimeout(async () => {
             try {
-                await channel.send({
-                    content: response
-                });
+                // Check if bot has already sent a message in this channel to avoid duplicates
+                const recentMessages = await channel.messages.fetch({ limit: 10 });
+                const botMessages = recentMessages.filter(msg => msg.author.bot && msg.author.id === client.user.id);
+                
+                // Only send if no bot message exists or the last bot message is older than 30 seconds
+                const shouldSend = botMessages.size === 0 || 
+                    (Date.now() - botMessages.first().createdTimestamp) > 30000;
+                
+                if (shouldSend) {
+                    await channel.send({
+                        content: response
+                    });
+                }
             } catch (error) {
                 console.error('Error sending auto-response:', error);
             }
@@ -2071,8 +2097,12 @@ process.on('uncaughtException', error => {
 });
 
 // Login to Discord
-const token = '';
-////
+const token = process.env.DISCORD_TOKEN;
+if (!token) {
+    console.error('DISCORD_TOKEN environment variable is not set');
+    process.exit(1);
+}
+
 client.login(token).catch(error => {
     console.error('Failed to login to Discord:', error);
     process.exit(1);
