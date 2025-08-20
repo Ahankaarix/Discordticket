@@ -545,7 +545,7 @@ async function createTicket(guild, user, category) {
         // Get admin role
         const adminRole = guild.roles.cache.get(config.adminRoleId);
         
-        // Create ticket channel
+        // Create ticket channel with restricted permissions
         const ticketChannel = await guild.channels.create({
             name: ticketId,
             type: ChannelType.GuildText,
@@ -567,10 +567,10 @@ async function createTicket(guild, user, category) {
                     id: adminRole.id,
                     allow: [
                         PermissionFlagsBits.ViewChannel,
-                        PermissionFlagsBits.SendMessages,
                         PermissionFlagsBits.ReadMessageHistory,
                         PermissionFlagsBits.ManageMessages
-                    ]
+                    ],
+                    deny: [PermissionFlagsBits.SendMessages]
                 }] : [])
             ]
         });
@@ -655,6 +655,14 @@ async function handleTicketClaim(interaction) {
         
         // Claim the ticket
         await claimTicket(channel.id, member.id);
+        
+        // Give claimer permission to send messages
+        await channel.permissionOverwrites.edit(member.id, {
+            ViewChannel: true,
+            SendMessages: true,
+            ReadMessageHistory: true,
+            ManageMessages: true
+        });
         
         await interaction.reply({
             content: `✅ ${member.toString()} has claimed this ticket!`
@@ -893,7 +901,131 @@ const setupCommand = {
     }
 };
 
+// Add user to ticket command
+const addCommand = {
+    data: new SlashCommandBuilder()
+        .setName('add')
+        .setDescription('Add a user to this ticket')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('The user to add to this ticket')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    
+    async execute(interaction) {
+        try {
+            const guild = interaction.guild;
+            const member = interaction.member;
+            const channel = interaction.channel;
+            const userToAdd = interaction.options.getUser('user');
+            
+            // Check if user has admin role
+            const adminRole = guild.roles.cache.get(config.adminRoleId);
+            if (!adminRole || !member.roles.cache.has(adminRole.id)) {
+                return await interaction.reply({
+                    content: '❌ You do not have permission to add users to tickets.',
+                    ephemeral: true
+                });
+            }
+            
+            // Check if this is a ticket channel
+            const ticket = await getTicket(channel.id);
+            if (!ticket) {
+                return await interaction.reply({
+                    content: '❌ This command can only be used in ticket channels.',
+                    ephemeral: true
+                });
+            }
+            
+            // Add user to ticket channel with messaging permissions
+            await channel.permissionOverwrites.edit(userToAdd.id, {
+                ViewChannel: true,
+                SendMessages: true,
+                ReadMessageHistory: true
+            });
+            
+            await interaction.reply({
+                content: `✅ ${userToAdd.toString()} has been added to this ticket!`
+            });
+            
+            console.log(`User ${userToAdd.tag} added to ticket ${ticket.id} by ${member.user.tag}`);
+            
+        } catch (error) {
+            console.error('Add command error:', error);
+            await interaction.reply({
+                content: '❌ An error occurred while adding the user to this ticket.',
+                ephemeral: true
+            });
+        }
+    }
+};
+
+// Remove user from ticket command
+const removeCommand = {
+    data: new SlashCommandBuilder()
+        .setName('remove')
+        .setDescription('Remove a user from this ticket')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('The user to remove from this ticket')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    
+    async execute(interaction) {
+        try {
+            const guild = interaction.guild;
+            const member = interaction.member;
+            const channel = interaction.channel;
+            const userToRemove = interaction.options.getUser('user');
+            
+            // Check if user has admin role
+            const adminRole = guild.roles.cache.get(config.adminRoleId);
+            if (!adminRole || !member.roles.cache.has(adminRole.id)) {
+                return await interaction.reply({
+                    content: '❌ You do not have permission to remove users from tickets.',
+                    ephemeral: true
+                });
+            }
+            
+            // Check if this is a ticket channel
+            const ticket = await getTicket(channel.id);
+            if (!ticket) {
+                return await interaction.reply({
+                    content: '❌ This command can only be used in ticket channels.',
+                    ephemeral: true
+                });
+            }
+            
+            // Don't allow removing the ticket creator
+            if (userToRemove.id === ticket.user_id) {
+                return await interaction.reply({
+                    content: '❌ You cannot remove the ticket creator from their own ticket.',
+                    ephemeral: true
+                });
+            }
+            
+            // Remove user's permissions from ticket channel
+            await channel.permissionOverwrites.delete(userToRemove.id);
+            
+            await interaction.reply({
+                content: `✅ ${userToRemove.toString()} has been removed from this ticket!`
+            });
+            
+            console.log(`User ${userToRemove.tag} removed from ticket ${ticket.id} by ${member.user.tag}`);
+            
+        } catch (error) {
+            console.error('Remove command error:', error);
+            await interaction.reply({
+                content: '❌ An error occurred while removing the user from this ticket.',
+                ephemeral: true
+            });
+        }
+    }
+};
+
 client.commands.set(setupCommand.data.name, setupCommand);
+client.commands.set(addCommand.data.name, addCommand);
+client.commands.set(removeCommand.data.name, removeCommand);
 
 // Ready event
 client.once(Events.ClientReady, async (client) => {
