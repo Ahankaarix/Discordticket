@@ -195,6 +195,24 @@ function saveTranscript(ticketId, content) {
     });
 }
 
+function updateTicketCategory(channelId, newCategory) {
+    return new Promise((resolve, reject) => {
+        const stmt = db.prepare(`
+            UPDATE tickets SET category = ? WHERE channel_id = ? AND status = 'open'
+        `);
+        
+        stmt.run([newCategory, channelId], function(err) {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(this.changes > 0);
+            }
+        });
+        
+        stmt.finalize();
+    });
+}
+
 // Ticket categories
 const TICKET_CATEGORIES = {
     'general_query': {
@@ -857,6 +875,81 @@ async function handleTicketCreation(interaction) {
     }
 }
 
+async function handleTicketTransfer(interaction) {
+    try {
+        const newCategory = interaction.values[0];
+        const guild = interaction.guild;
+        const member = interaction.member;
+        const channel = interaction.channel;
+        
+        // Get ticket from database
+        const ticket = await getTicket(channel.id);
+        if (!ticket) {
+            return await interaction.reply({
+                content: '❌ This is not a valid ticket channel.',
+                ephemeral: true
+            });
+        }
+        
+        const oldCategoryInfo = TICKET_CATEGORIES[ticket.category];
+        const newCategoryInfo = TICKET_CATEGORIES[newCategory];
+        
+        if (!newCategoryInfo) {
+            return await interaction.reply({
+                content: '❌ Invalid category selected.',
+                ephemeral: true
+            });
+        }
+        
+        // Update ticket category in database
+        await updateTicketCategory(channel.id, newCategory);
+        
+        // Update channel topic
+        const user = await guild.members.fetch(ticket.user_id).catch(() => null);
+        const newTopic = `Ticket for ${user ? user.user.tag : 'Unknown User'} (${ticket.user_id}) - Category: ${newCategoryInfo.label}`;
+        await channel.setTopic(newTopic);
+        
+        // Generate new channel name with new category
+        const categoryShortName = {
+            'general_query': 'general',
+            'account_issues': 'account', 
+            'business_ticket': 'business',
+            'membership_ticket': 'membership',
+            'staff_application': 'staff',
+            'report': 'report',
+            'billing': 'billing'
+        }[newCategory] || 'general';
+        
+        const username = user ? user.user.username : 'unknown';
+        const newChannelName = `pcrp-${username}-${categoryShortName}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        
+        // Rename channel to reflect new category
+        await channel.setName(newChannelName);
+        
+        await interaction.reply({
+            content: `✅ **Ticket Transferred Successfully**\n\n` +
+                    `**From:** ${oldCategoryInfo ? oldCategoryInfo.label : 'Unknown'} ${oldCategoryInfo ? oldCategoryInfo.emoji : ''}\n` +
+                    `**To:** ${newCategoryInfo.label} ${newCategoryInfo.emoji}\n` +
+                    `**New Channel Name:** ${newChannelName}`
+        });
+        
+        // Send notification message in the ticket
+        await channel.send({
+            content: `🔄 **Ticket Category Changed**\n\n` +
+                    `This ticket has been transferred from **${oldCategoryInfo ? oldCategoryInfo.label : 'Unknown'}** to **${newCategoryInfo.label}** by ${member.toString()}.`
+        });
+        
+        console.log(`Ticket ${ticket.id} transferred from ${ticket.category} to ${newCategory} by ${member.user.tag}`);
+        
+    } catch (error) {
+        console.error('Ticket transfer error:', error);
+        await interaction.reply({
+            content: '❌ An error occurred while transferring the ticket.',
+            ephemeral: true
+        });
+    }
+}
+
 // Create Discord client
 const client = new Client({
     intents: [
@@ -1023,9 +1116,143 @@ const removeCommand = {
     }
 };
 
+// Rename ticket command
+const renameCommand = {
+    data: new SlashCommandBuilder()
+        .setName('rename')
+        .setDescription('Rename this ticket channel')
+        .addStringOption(option =>
+            option.setName('name')
+                .setDescription('New name for the ticket')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    
+    async execute(interaction) {
+        try {
+            const guild = interaction.guild;
+            const member = interaction.member;
+            const channel = interaction.channel;
+            const newName = interaction.options.getString('name');
+            
+            // Check if user has admin role
+            const adminRole = guild.roles.cache.get(config.adminRoleId);
+            if (!adminRole || !member.roles.cache.has(adminRole.id)) {
+                return await interaction.reply({
+                    content: '❌ You do not have permission to rename tickets.',
+                    ephemeral: true
+                });
+            }
+            
+            // Check if this is a ticket channel
+            const ticket = await getTicket(channel.id);
+            if (!ticket) {
+                return await interaction.reply({
+                    content: '❌ This command can only be used in ticket channels.',
+                    ephemeral: true
+                });
+            }
+            
+            // Clean the name for Discord channel naming rules
+            const cleanName = newName.toLowerCase().replace(/[^a-z0-9-]/g, '-').substring(0, 50);
+            
+            // Rename the channel
+            await channel.setName(cleanName);
+            
+            await interaction.reply({
+                content: `✅ Ticket renamed to: **${cleanName}**`
+            });
+            
+            console.log(`Ticket ${ticket.id} renamed to ${cleanName} by ${member.user.tag}`);
+            
+        } catch (error) {
+            console.error('Rename command error:', error);
+            await interaction.reply({
+                content: '❌ An error occurred while renaming the ticket.',
+                ephemeral: true
+            });
+        }
+    }
+};
+
+// Transfer ticket command
+const transferCommand = {
+    data: new SlashCommandBuilder()
+        .setName('transfer')
+        .setDescription('Transfer this ticket to a different category')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    
+    async execute(interaction) {
+        try {
+            const guild = interaction.guild;
+            const member = interaction.member;
+            const channel = interaction.channel;
+            
+            // Check if user has admin role
+            const adminRole = guild.roles.cache.get(config.adminRoleId);
+            if (!adminRole || !member.roles.cache.has(adminRole.id)) {
+                return await interaction.reply({
+                    content: '❌ You do not have permission to transfer tickets.',
+                    ephemeral: true
+                });
+            }
+            
+            // Check if this is a ticket channel
+            const ticket = await getTicket(channel.id);
+            if (!ticket) {
+                return await interaction.reply({
+                    content: '❌ This command can only be used in ticket channels.',
+                    ephemeral: true
+                });
+            }
+            
+            // Create select menu with all categories except current one
+            const options = Object.entries(TICKET_CATEGORIES)
+                .filter(([value, category]) => value !== ticket.category)
+                .map(([value, category]) => ({
+                    label: category.label,
+                    description: category.description,
+                    value: value,
+                    emoji: category.emoji
+                }));
+            
+            if (options.length === 0) {
+                return await interaction.reply({
+                    content: '❌ No other categories available to transfer to.',
+                    ephemeral: true
+                });
+            }
+            
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId('transfer_category')
+                .setPlaceholder('Select new category for this ticket...')
+                .addOptions(options);
+            
+            const row = new ActionRowBuilder()
+                .addComponents(selectMenu);
+            
+            const currentCategory = TICKET_CATEGORIES[ticket.category];
+            
+            await interaction.reply({
+                content: `🔄 **Transfer Ticket**\n\nCurrent category: **${currentCategory ? currentCategory.label : 'Unknown'}**\nSelect a new category from the menu below:`,
+                components: [row],
+                ephemeral: true
+            });
+            
+        } catch (error) {
+            console.error('Transfer command error:', error);
+            await interaction.reply({
+                content: '❌ An error occurred while setting up the transfer.',
+                ephemeral: true
+            });
+        }
+    }
+};
+
 client.commands.set(setupCommand.data.name, setupCommand);
 client.commands.set(addCommand.data.name, addCommand);
 client.commands.set(removeCommand.data.name, removeCommand);
+client.commands.set(renameCommand.data.name, renameCommand);
+client.commands.set(transferCommand.data.name, transferCommand);
 
 // Ready event
 client.once(Events.ClientReady, async (client) => {
@@ -1079,6 +1306,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
         else if (interaction.isStringSelectMenu()) {
             if (interaction.customId === 'ticket_category') {
                 await handleTicketCreation(interaction);
+            } else if (interaction.customId === 'transfer_category') {
+                await handleTicketTransfer(interaction);
             }
         }
         
