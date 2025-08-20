@@ -30,6 +30,8 @@ The bot is built on Discord.js v14 with a modular architecture using:
 - **Automatic cleanup**: Configurable auto-deletion of closed tickets after specified time
 - **Transcript generation**: Conversation history saved before ticket deletion
 - **User feedback system**: Star ratings (1-5) and text comments collected when tickets close
+- **AI auto-response system**: Category-specific welcome messages and keyword detection
+- **Smart keyword detection**: Auto-replies for PayPal, UPI, refunds, and missing items
 - **DM notifications**: Transcript delivery with interactive feedback collection buttons
 
 ## Configuration Management

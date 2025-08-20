@@ -590,7 +590,7 @@ async function createTicket(guild, user, category) {
             'billing': 'billing'
         }[category] || 'general';
         
-        const ticketId = `pcrp-${user.username}-${categoryShortName}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        const ticketId = `pcrp-${user.username}-${categoryShortName}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
         
         // Get admin role
         const adminRole = guild.roles.cache.get(config.adminRoleId);
@@ -649,6 +649,9 @@ async function createTicket(guild, user, category) {
             content: `${user.toString()}${adminRole ? ` ${adminRole.toString()}` : ''}`,
             embeds: [ticketEmbed]
         });
+        
+        // Send auto-response message based on category
+        await sendAutoResponse(ticketChannel, user, category);
         
         // Send controls message only visible to admins
         if (adminRole) {
@@ -1634,6 +1637,88 @@ async function handleFeedbackModal(interaction) {
         });
     }
 }
+
+// Auto-response system
+async function sendAutoResponse(channel, user, category) {
+    const autoResponses = {
+        'general_query': `👋 Welcome ${user.toString()}! How can we assist you today?`,
+        'account_issues': `👋 Hi ${user.toString()}, please describe your account problem (include username, email, or any proof if needed).`,
+        'business_ticket': `💼 Hello ${user.toString()}, please provide details about your business inquiry so our team can review it.`,
+        'membership_ticket': `👑 Hi ${user.toString()}, please share your membership details or questions so we can assist you.`,
+        'staff_application': `📝 Welcome ${user.toString()}! Please provide your details (Name, Age, Experience, and why you'd like to join our team).`,
+        'report': `⚠️ Hello ${user.toString()}, please provide details about the issue or user you are reporting.\nℹ️ Include names, IDs, screenshots, or any proof to help us review it quickly.`,
+        'billing': `💳 Hi ${user.toString()}, please explain your billing/payment issue 🧾.\nRemember: since your payment is an investment to the server, we follow a no refund policy for all purchases.`
+    };
+    
+    const response = autoResponses[category];
+    if (response) {
+        setTimeout(async () => {
+            try {
+                await channel.send({
+                    content: response
+                });
+            } catch (error) {
+                console.error('Error sending auto-response:', error);
+            }
+        }, 2000); // 2 second delay
+    }
+}
+
+// Keyword detection system
+async function handleKeywordResponse(message) {
+    const content = message.content.toLowerCase();
+    
+    // Check for PayPal keyword
+    if (content.includes('paypal')) {
+        await message.reply('💳 **PayPal Payment Link:**\nhttps://paypal.me/DavidBarma');
+        return;
+    }
+    
+    // Check for UPI keyword
+    if (content.includes('upi')) {
+        await message.reply('💳 **UPI Payment ID:**\ndavidbarma19-4@okicici');
+        return;
+    }
+    
+    // Check for refund keyword
+    if (content.includes('refund')) {
+        await message.reply({
+            embeds: [{
+                title: '⚠️ No Refund Policy',
+                description: 'All payments made are considered an investment into the server.\nOnce a purchase is completed, refunds will not be provided under any circumstances.',
+                color: 0xff0000,
+                footer: { text: 'PCRP Support Policy' }
+            }]
+        });
+        return;
+    }
+    
+    // Check for item missing, inventory, or report keywords
+    if (content.includes('item missing') || content.includes('inventory') || content.includes('missing item') || 
+        content.includes('lost item') || content.includes('bug report') || content.includes('report bug')) {
+        await message.reply('📋 **Please provide all the necessary details or proof (POV) so we can review your issue properly.**\n\n' +
+                           '**Include:**\n' +
+                           '• Screenshots or video proof\n' +
+                           '• Detailed description of the issue\n' +
+                           '• Your username/ID\n' +
+                           '• When it happened\n' +
+                           '• Any error messages you received');
+        return;
+    }
+}
+
+// Message event for keyword detection
+client.on(Events.MessageCreate, async (message) => {
+    // Ignore bot messages
+    if (message.author.bot) return;
+    
+    // Only check messages in ticket channels
+    const ticket = await getTicket(message.channel.id).catch(() => null);
+    if (!ticket) return;
+    
+    // Handle keyword responses
+    await handleKeywordResponse(message);
+});
 
 // Interaction event
 client.on(Events.InteractionCreate, async (interaction) => {
