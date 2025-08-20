@@ -2072,7 +2072,7 @@ process.on('uncaughtException', error => {
 
 // Login to Discord
 const token = '';
-
+////
 client.login(token).catch(error => {
     console.error('Failed to login to Discord:', error);
     process.exit(1);
