@@ -1,0 +1,10 @@
+{
+    "guildId": "1407656756779155477",
+    "ticketChannelId": "1407656785564930068",
+    "logsChannelId": "1407656810453663754",
+    "adminRoleId": "1407657166114127962",
+    "ticketCategoryId": null,
+    "maxTicketsPerUser": 1,
+    "autoDeleteAfterClose": 5000,
+    "transcriptChannelId": null
+}
