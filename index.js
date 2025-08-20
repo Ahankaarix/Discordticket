@@ -745,11 +745,7 @@ process.on('uncaughtException', error => {
 });
 
 // Login to Discord
-const token = process.env.DISCORD_TOKEN;
-if (!token) {
-    console.error('DISCORD_TOKEN not found in environment variables!');
-    process.exit(1);
-}
+const token = 'MTQwNzY1NzcwMTU0MjIwMzUwMw.GSjnC6.EhJi9azW78Zx3WsSR3YS4JLtSOT6QZlAfpeb2I';
 
 client.login(token).catch(error => {
     console.error('Failed to login to Discord:', error);
