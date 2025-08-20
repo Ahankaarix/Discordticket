@@ -265,13 +265,13 @@ function createTicketEmbed(user, categoryInfo) {
 
 function createTicketControlsEmbed() {
     return new EmbedBuilder()
-        .setTitle('🎛️ Ticket Controls')
+        .setTitle('🔧 Staff Management Panel')
         .setDescription(
             '**For Support Staff:**\n' +
             '🔷 Click **Claim Ticket** to assign yourself to this ticket\n' +
             '🔷 Click **Close Ticket** to close and archive this ticket\n\n' +
-            '**For Ticket Creator:**\n' +
-            '🔷 You can also close your own ticket using the **Close Ticket** button'
+            '**For User:**\n' +
+            '🔷 You can also close your ticket using the **Close Ticket** button'
         )
         .setColor(0x0099FF)
         .setTimestamp();
@@ -327,8 +327,18 @@ async function createTicket(guild, user, category) {
             throw new Error('Invalid ticket category');
         }
         
-        // Generate unique ticket ID
-        const ticketId = `ticket-${user.username}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        // Generate unique ticket ID with category
+        const categoryShortName = {
+            'general_query': 'general',
+            'account_issues': 'account',
+            'business_ticket': 'business',
+            'membership_ticket': 'membership',
+            'staff_application': 'staff',
+            'report': 'report',
+            'billing': 'billing'
+        }[category] || 'general';
+        
+        const ticketId = `pcrp-${user.username}-${categoryShortName}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
         
         // Get admin role
         const adminRole = guild.roles.cache.get(config.adminRoleId);
@@ -381,13 +391,22 @@ async function createTicket(guild, user, category) {
         
         // Send ticket message
         const ticketEmbed = createTicketEmbed(user, categoryInfo);
-        const controlsEmbed = createTicketControlsEmbed();
         
+        // Send main ticket message for everyone
         await ticketChannel.send({
             content: `${user.toString()}${adminRole ? ` ${adminRole.toString()}` : ''}`,
-            embeds: [ticketEmbed, controlsEmbed],
-            components: [controlRow]
+            embeds: [ticketEmbed]
         });
+        
+        // Send controls message only visible to admins
+        if (adminRole) {
+            const controlsEmbed = createTicketControlsEmbed();
+            await ticketChannel.send({
+                content: `${adminRole.toString()}`,
+                embeds: [controlsEmbed],
+                components: [controlRow]
+            });
+        }
         
         // Save ticket to database
         await createTicketDB(ticketId, ticketChannel.id, user.id, category);
