@@ -7,12 +7,12 @@ const DISCORD_TOKEN = "";
 
 // Configuration
 const config = {
-    guildId: "1407656756779155477",
-    ticketChannelId: "1407656785564930068",
-    logsChannelId: "1407656810453663754",
-    adminRoleId: "1407657166114127962",
-    feedbackChannelId: "1407668519990067200",
-    ticketCategoryId: null,
+    guildId: "965836797882028092",
+    ticketChannelId: "1350199875060371507",
+    logsChannelId: "1350200017864097854",
+    adminRoleId: "1380241955040002118",
+    feedbackChannelId: "1407739229106077736",
+    ticketCategoryId: "1404465826073153556",
     maxTicketsPerUser: 1,
     autoDeleteAfterClose: 5000,
     transcriptChannelId: null
