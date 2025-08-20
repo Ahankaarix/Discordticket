@@ -3,7 +3,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 // Bot Token - Replace with your actual Discord bot token
-const DISCORD_TOKEN = "YOUR_DISCORD_BOT_TOKEN_HERE";
+const DISCORD_TOKEN = "";
 
 // Configuration
 const config = {
