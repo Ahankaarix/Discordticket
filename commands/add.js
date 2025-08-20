@@ -19,7 +19,7 @@ module.exports = {
             if (!channel.name.startsWith('pcrp-')) {
                 return await interaction.reply({
                     content: '❌ This command can only be used in ticket channels.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
             
@@ -32,7 +32,7 @@ module.exports = {
             
             await interaction.reply({
                 content: `✅ ${user.toString()} has been added to this ticket.`,
-                ephemeral: true
+                flags: 64
             });
             
             // Send notification in the channel
@@ -42,7 +42,7 @@ module.exports = {
             console.error('Add command error:', error);
             await interaction.reply({
                 content: '❌ Failed to add user to ticket.',
-                ephemeral: true
+                flags: 64
             });
         }
     }

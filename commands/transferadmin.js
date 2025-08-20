@@ -25,7 +25,7 @@ module.exports = {
             if (!channel.name.startsWith('pcrp-')) {
                 return await interaction.reply({
                     content: '❌ This command can only be used in ticket channels.',
-                    ephemeral: true
+                    flags: 64 // Ephemeral flag
                 });
             }
             
@@ -34,7 +34,7 @@ module.exports = {
             if (!member) {
                 return await interaction.reply({
                     content: '❌ Could not find that user in this server.',
-                    ephemeral: true
+                    flags: 64 // Ephemeral flag
                 });
             }
             
@@ -47,7 +47,7 @@ module.exports = {
             
             await interaction.reply({
                 content: `✅ ${admin.toString()} has been notified about this ticket.`,
-                ephemeral: true
+                flags: 64 // Ephemeral flag
             });
             
             // Send notification in the channel
@@ -62,10 +62,12 @@ module.exports = {
             
         } catch (error) {
             console.error('Transferadmin command error:', error);
-            await interaction.reply({
-                content: '❌ Failed to notify admin.',
-                ephemeral: true
-            });
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: '❌ Failed to notify admin.',
+                    flags: 64 // Ephemeral flag
+                });
+            }
         }
     }
 };

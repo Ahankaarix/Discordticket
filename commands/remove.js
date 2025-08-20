@@ -19,7 +19,7 @@ module.exports = {
             if (!channel.name.startsWith('pcrp-')) {
                 return await interaction.reply({
                     content: '❌ This command can only be used in ticket channels.',
-                    ephemeral: true
+                    flags: 64
                 });
             }
             
@@ -28,7 +28,7 @@ module.exports = {
             
             await interaction.reply({
                 content: `✅ ${user.toString()} has been removed from this ticket.`,
-                ephemeral: true
+                flags: 64
             });
             
             // Send notification in the channel
@@ -38,7 +38,7 @@ module.exports = {
             console.error('Remove command error:', error);
             await interaction.reply({
                 content: '❌ Failed to remove user from ticket.',
-                ephemeral: true
+                flags: 64
             });
         }
     }
