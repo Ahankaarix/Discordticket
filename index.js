@@ -2,7 +2,8 @@ const { Client, GatewayIntentBits, Collection, SlashCommandBuilder, PermissionFl
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
-require('dotenv').config();
+// Bot Token - Replace with your actual Discord bot token
+const DISCORD_TOKEN = "YOUR_DISCORD_BOT_TOKEN_HERE";
 
 // Configuration
 const config = {
@@ -1348,7 +1349,7 @@ client.once(Events.ClientReady, async (client) => {
     try {
         console.log('Started refreshing application (/) commands.');
         
-        const rest = new REST().setToken(process.env.DISCORD_TOKEN);
+        const rest = new REST().setToken(DISCORD_TOKEN);
         await rest.put(
             Routes.applicationGuildCommands(client.user.id, config.guildId),
             { body: commands }
@@ -1714,13 +1715,12 @@ process.on('uncaughtException', error => {
 });
 
 // Login to Discord
-const token = process.env.DISCORD_TOKEN;
-if (!token) {
-    console.error('DISCORD_TOKEN environment variable is not set');
+if (!DISCORD_TOKEN || DISCORD_TOKEN === "YOUR_DISCORD_BOT_TOKEN_HERE") {
+    console.error('Please replace DISCORD_TOKEN with your actual Discord bot token in index.js');
     process.exit(1);
 }
 
-client.login(token).catch(error => {
+client.login(DISCORD_TOKEN).catch(error => {
     console.error('Failed to login to Discord:', error);
     process.exit(1);
 });
