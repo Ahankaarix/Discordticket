@@ -949,13 +949,7 @@ async function handleTicketClose(interaction) {
                 const feedbackRow = new ActionRowBuilder()
                     .addComponents(star1, star2, star3, star4, star5);
                 
-                const textFeedbackButton = new ButtonBuilder()
-                    .setCustomId(`feedback_text_${ticket.id}`)
-                    .setLabel('📝 Add Comment')
-                    .setStyle(ButtonStyle.Primary);
-                
-                const textRow = new ActionRowBuilder()
-                    .addComponents(textFeedbackButton);
+                // Removed text feedback button since comments are now handled in star rating modals
                 
                 await user.user.send({
                     content: `🎫 **Your Support Ticket Transcript**\n\n` +
@@ -969,7 +963,7 @@ async function handleTicketClose(interaction) {
                             `💭 **How was our support?** Please rate your experience:\n\n` +
                             `Thank you for using PCRP Support! If you need further assistance, feel free to create a new ticket.`,
                     files: [userAttachment],
-                    components: [feedbackRow, textRow]
+                    components: [feedbackRow]
                 });
                 
                 console.log(`Transcript DM sent successfully to ${user.user.tag}`);
@@ -1822,35 +1816,27 @@ async function handleFeedback(interaction) {
     
     try {
         if (prefix === 'feedback' && rating && rating !== 'text') {
-            // Star rating feedback
+            // Star rating feedback - show modal with rating pre-selected
             const ratingNum = parseInt(rating);
             
-            await interaction.deferReply({ ephemeral: true });
+            const modal = new ModalBuilder()
+                .setCustomId(`feedback_modal_${ticketId}_${ratingNum}`)
+                .setTitle(`Feedback - ${ratingNum}⭐`);
             
-            // Save feedback to database
-            await saveFeedback(ticketId, interaction.user.id, ratingNum, null);
+            const commentInput = new TextInputBuilder()
+                .setCustomId('feedback_comment')
+                .setLabel('Add your comment (optional)')
+                .setPlaceholder('Share your thoughts about the support you received...')
+                .setStyle(TextInputStyle.Paragraph)
+                .setMinLength(0)
+                .setMaxLength(1000)
+                .setRequired(false);
             
-            // Send to feedback channel
-            const feedbackChannel = client.channels.cache.get(config.feedbackChannelId);
-            if (feedbackChannel) {
-                await feedbackChannel.send({
-                    embeds: [{
-                        title: '⭐ Star Rating Feedback',
-                        color: 0x00ff00,
-                        fields: [
-                            { name: '🎫 Ticket ID', value: ticketId, inline: true },
-                            { name: '👤 User', value: interaction.user.tag, inline: true },
-                            { name: '⭐ Rating', value: `${ratingNum}/5 stars`, inline: true }
-                        ],
-                        timestamp: new Date(),
-                        footer: { text: 'PCRP Support Feedback System' }
-                    }]
-                });
-            }
+            const firstActionRow = new ActionRowBuilder().addComponents(commentInput);
+            modal.addComponents(firstActionRow);
             
-            await interaction.editReply({
-                content: `✅ Thank you for your feedback! You rated our support **${ratingNum}/5 stars**.\n\nWe appreciate your time and will use this feedback to improve our service.`
-            });
+            await interaction.showModal(modal);
+            return; // Don't send additional response for modal
             
         } else if (prefix === 'feedback' && rating === 'text') {
             // Text feedback - show modal
@@ -1882,35 +1868,59 @@ async function handleFeedback(interaction) {
 }
 
 async function handleFeedbackModal(interaction) {
-    const ticketId = interaction.customId.replace('feedback_modal_', '');
+    const customId = interaction.customId.replace('feedback_modal_', '');
+    const parts = customId.split('_');
+    const ticketId = parts.slice(0, -1).join('_'); // Everything except the last part
+    const rating = parts[parts.length - 1]; // Last part is the rating
     const comment = interaction.fields.getTextInputValue('feedback_comment');
     
     try {
         await interaction.deferReply({ ephemeral: true });
         
-        // Save feedback to database
-        await saveFeedback(ticketId, interaction.user.id, null, comment);
+        // Save feedback to database with both rating and comment
+        const ratingNum = rating ? parseInt(rating) : null;
+        await saveFeedback(ticketId, interaction.user.id, ratingNum, comment || null);
         
         // Send to feedback channel
         const feedbackChannel = client.channels.cache.get(config.feedbackChannelId);
         if (feedbackChannel) {
-            await feedbackChannel.send({
-                embeds: [{
-                    title: '📝 Written Feedback',
-                    color: 0x0099ff,
-                    fields: [
-                        { name: '🎫 Ticket ID', value: ticketId, inline: true },
-                        { name: '👤 User', value: interaction.user.tag, inline: true },
-                        { name: '💬 Comment', value: comment.length > 1000 ? comment.substring(0, 997) + '...' : comment, inline: false }
-                    ],
-                    timestamp: new Date(),
-                    footer: { text: 'PCRP Support Feedback System' }
-                }]
-            });
+            const embed = {
+                title: '⭐ Customer Feedback',
+                color: ratingNum ? (ratingNum >= 4 ? 0x00ff00 : ratingNum >= 3 ? 0xffff00 : 0xff0000) : 0x0099ff,
+                fields: [
+                    { name: '🎫 Ticket ID', value: ticketId, inline: true },
+                    { name: '👤 User', value: interaction.user.tag, inline: true }
+                ],
+                timestamp: new Date(),
+                footer: { text: 'PCRP Support Feedback System' }
+            };
+            
+            if (ratingNum) {
+                embed.fields.push({ name: '⭐ Rating', value: `${ratingNum}/5 stars`, inline: true });
+            }
+            
+            if (comment && comment.trim()) {
+                embed.fields.push({ 
+                    name: '💬 Comment', 
+                    value: comment.length > 1000 ? comment.substring(0, 997) + '...' : comment, 
+                    inline: false 
+                });
+            }
+            
+            await feedbackChannel.send({ embeds: [embed] });
         }
         
+        let responseMessage = '✅ Thank you for your feedback!';
+        if (ratingNum) {
+            responseMessage += `\n\n**Rating:** ${ratingNum}/5 stars`;
+        }
+        if (comment && comment.trim()) {
+            responseMessage += `\n**Your comment:** ${comment}`;
+        }
+        responseMessage += '\n\nWe appreciate your time and will use this feedback to improve our service.';
+        
         await interaction.editReply({
-            content: `✅ Thank you for your detailed feedback!\n\n**Your comment:**\n> ${comment}\n\nWe appreciate your time and will use this feedback to improve our service.`
+            content: responseMessage
         });
         
     } catch (error) {
