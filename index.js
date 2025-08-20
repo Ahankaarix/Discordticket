@@ -1561,64 +1561,66 @@ async function sendAutoResponse(channel, user, category) {
     }
 }
 
-// Keyword detection system with duplicate prevention
+// Track user keyword responses to prevent repeats
+const userKeywordResponses = new Map();
+
+// Keyword detection system with per-user response tracking
 async function handleKeywordResponse(message) {
     const content = message.content.toLowerCase();
-    const channel = message.channel;
+    const userId = message.author.id;
+    const channelId = message.channel.id;
     
-    // Check if bot recently responded to avoid spam
+    // Create unique key for user + channel + keyword type
+    let keywordType = null;
+    if (content.includes('paypal')) keywordType = 'paypal';
+    else if (content.includes('upi')) keywordType = 'upi';
+    else if (content.includes('refund')) keywordType = 'refund';
+    else if (content.includes('item missing') || content.includes('inventory') || content.includes('missing item') || 
+             content.includes('lost item') || content.includes('bug report') || content.includes('report bug')) {
+        keywordType = 'missing_item';
+    }
+    
+    // If no keyword matched, return
+    if (!keywordType) return;
+    
+    const responseKey = `${userId}_${channelId}_${keywordType}`;
+    
+    // Check if user already received this type of response in this channel
+    if (userKeywordResponses.has(responseKey)) {
+        return; // Don't respond again
+    }
+    
+    // Mark that this user has received this response
+    userKeywordResponses.set(responseKey, Date.now());
+    
+    // Send appropriate response based on keyword type
     try {
-        const recentMessages = await channel.messages.fetch({ limit: 5 });
-        const recentBotReplies = recentMessages.filter(msg => 
-            msg.author.bot && 
-            msg.author.id === client.user.id && 
-            (Date.now() - msg.createdTimestamp) < 30000 // Within 30 seconds
-        );
-        
-        // If bot replied recently, don't send another auto-response
-        if (recentBotReplies.size > 0) {
-            return;
+        if (keywordType === 'paypal') {
+            await message.reply('💳 **PayPal Payment Link:**\nhttps://paypal.me/DavidBarma');
+        } else if (keywordType === 'upi') {
+            await message.reply('💳 **UPI Payment ID:**\ndavidbarma9-4@okicici');
+        } else if (keywordType === 'refund') {
+            await message.reply({
+                embeds: [{
+                    title: '⚠️ No Refund Policy',
+                    description: 'All payments made are considered an investment into the server.\nOnce a purchase is completed, refunds will not be provided under any circumstances.',
+                    color: 0xff0000,
+                    footer: { text: 'PCRP Support Policy' }
+                }]
+            });
+        } else if (keywordType === 'missing_item') {
+            await message.reply('📋 **Please provide all the necessary details or proof (POV) so we can review your issue properly.**\n\n' +
+                               '**Include:**\n' +
+                               '• Screenshots or video proof\n' +
+                               '• Detailed description of the issue\n' +
+                               '• Your username/ID\n' +
+                               '• When it happened\n' +
+                               '• Any error messages you received');
         }
     } catch (error) {
-        console.error('Error checking recent messages:', error);
-    }
-    
-    // Check for PayPal keyword
-    if (content.includes('paypal')) {
-        await message.reply('💳 **PayPal Payment Link:**\nhttps://paypal.me/DavidBarma');
-        return;
-    }
-    
-    // Check for UPI keyword
-    if (content.includes('upi')) {
-        await message.reply('💳 **UPI Payment ID:**\ndavidbarma9-4@okicici');
-        return;
-    }
-    
-    // Check for refund keyword
-    if (content.includes('refund')) {
-        await message.reply({
-            embeds: [{
-                title: '⚠️ No Refund Policy',
-                description: 'All payments made are considered an investment into the server.\nOnce a purchase is completed, refunds will not be provided under any circumstances.',
-                color: 0xff0000,
-                footer: { text: 'PCRP Support Policy' }
-            }]
-        });
-        return;
-    }
-    
-    // Check for item missing, inventory, or report keywords
-    if (content.includes('item missing') || content.includes('inventory') || content.includes('missing item') || 
-        content.includes('lost item') || content.includes('bug report') || content.includes('report bug')) {
-        await message.reply('📋 **Please provide all the necessary details or proof (POV) so we can review your issue properly.**\n\n' +
-                           '**Include:**\n' +
-                           '• Screenshots or video proof\n' +
-                           '• Detailed description of the issue\n' +
-                           '• Your username/ID\n' +
-                           '• When it happened\n' +
-                           '• Any error messages you received');
-        return;
+        console.error('Error sending keyword response:', error);
+        // Remove the tracking if sending failed
+        userKeywordResponses.delete(responseKey);
     }
 }
 
