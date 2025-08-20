@@ -236,8 +236,15 @@ const TICKET_CATEGORIES = {
 // Embed functions
 function createTicketPanelEmbed() {
     return new EmbedBuilder()
-        .setTitle('Select Menus')
-        .setDescription('**Support Tickets**\n\nSelect the option that best fits your problem. A support ticket will be created for you automatically.')
+        .setTitle('🎟️ Support Tickets')
+        .setDescription(
+            'Please choose the option that best matches your issue from the menu below.\n' +
+            'Once you select, ✅ a private ticket channel will be created where our team can assist you.\n\n' +
+            '✨ **How it works:**\n' +
+            '• Pick a category from the menu ⬇️\n' +
+            '• A new ticket will open 📂\n' +
+            '• Our staff will reply as soon as possible ⏳'
+        )
         .setColor(0x5865F2)
         .setTimestamp();
 }
