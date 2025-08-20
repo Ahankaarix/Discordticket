@@ -724,10 +724,12 @@ async function handleTicketClaim(interaction) {
         console.log(`Ticket ${ticket.id} claimed by ${member.user.tag}`);
     } catch (error) {
         console.error('Error claiming ticket:', error);
-        await interaction.reply({
-            content: '❌ An error occurred while claiming the ticket.',
-            ephemeral: true
-        });
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({
+                content: '❌ An error occurred while claiming the ticket.',
+                ephemeral: true
+            });
+        }
     }
 }
 
@@ -742,25 +744,33 @@ async function handleTicketClose(interaction) {
         const ticket = await getTicket(channel.id);
         
         if (!ticket) {
-            return await interaction.reply({
-                content: '❌ This is not a valid ticket channel.',
-                ephemeral: true
-            });
+            if (!interaction.replied && !interaction.deferred) {
+                return await interaction.reply({
+                    content: '❌ This is not a valid ticket channel.',
+                    ephemeral: true
+                });
+            }
+            return;
         }
         
         const isAdmin = adminRole && member.roles.cache.has(adminRole.id);
         const isTicketCreator = ticket.user_id === member.id;
         
         if (!isAdmin && !isTicketCreator) {
-            return await interaction.reply({
-                content: '❌ You do not have permission to close this ticket.',
-                ephemeral: true
-            });
+            if (!interaction.replied && !interaction.deferred) {
+                return await interaction.reply({
+                    content: '❌ You do not have permission to close this ticket.',
+                    ephemeral: true
+                });
+            }
+            return;
         }
         
-        await interaction.reply({
-            content: '🔒 Closing ticket and saving transcript...'
-        });
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({
+                content: '🔒 Closing ticket and saving transcript...'
+            });
+        }
         
         // Generate transcript
         const messages = await channel.messages.fetch({ limit: 100 });
@@ -900,10 +910,25 @@ async function handleTicketClose(interaction) {
         
     } catch (error) {
         console.error('Error closing ticket:', error);
-        await interaction.followUp({
-            content: '❌ An error occurred while closing the ticket.',
-            ephemeral: true
-        });
+        if (!interaction.replied && !interaction.deferred) {
+            try {
+                await interaction.reply({
+                    content: '❌ An error occurred while closing the ticket.',
+                    ephemeral: true
+                });
+            } catch (replyError) {
+                console.error('Could not send error reply:', replyError);
+            }
+        } else {
+            try {
+                await interaction.followUp({
+                    content: '❌ An error occurred while closing the ticket.',
+                    ephemeral: true
+                });
+            } catch (followUpError) {
+                console.error('Could not send follow up message:', followUpError);
+            }
+        }
     }
 }
 
@@ -922,8 +947,8 @@ async function reconnectToTickets(client, guild) {
                     continue;
                 }
                 
-                // Verify channel is still a valid ticket
-                if (!channel.name.startsWith('ticket-')) {
+                // Verify channel is still a valid ticket (updated for pcrp- format)
+                if (!channel.name.startsWith('pcrp-')) {
                     await closeTicket(ticket.channel_id);
                     console.log(`Closed invalid ticket channel: ${ticket.id}`);
                     continue;
@@ -950,9 +975,9 @@ async function handleTicketCreation(interaction) {
         const guild = interaction.guild;
         const user = interaction.user;
         
-        // Check if user already has an open ticket
+        // Check if user already has an open ticket (updated for pcrp- format)
         const existingTickets = guild.channels.cache.filter(channel => 
-            channel.name.startsWith('ticket-') && 
+            channel.name.startsWith('pcrp-') && 
             channel.topic && 
             channel.topic.includes(user.id)
         );

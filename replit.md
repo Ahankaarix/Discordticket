@@ -43,8 +43,9 @@ The bot is built on Discord.js v14 with a modular architecture using:
 ## Event Handling Architecture
 - **Interaction router**: Single interaction handler that routes slash commands, select menus, button interactions, and modal submissions
 - **Ready event**: Bot initialization, ticket panel setup, and reconnection to existing tickets
+- **Automatic reconnection**: Detects and reconnects to open tickets when bot restarts using pcrp- naming format
 - **Feedback system**: Handles star ratings, text feedback modals, and automatic channel forwarding
-- **Error handling**: Comprehensive try-catch blocks with user-friendly error messages
+- **Error handling**: Comprehensive try-catch blocks with interaction reply checks to prevent double-acknowledgment errors
 
 ## Utility Modules
 - **Embed generator**: Standardized embed creation for consistent UI/UX
