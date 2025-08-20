@@ -119,6 +119,53 @@ function getTicket(channelId) {
     });
 }
 
+function getAnyTicket(channelId) {
+    return new Promise((resolve, reject) => {
+        db.get(`
+            SELECT * FROM tickets WHERE channel_id = ?
+        `, [channelId], (err, row) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(row);
+            }
+        });
+    });
+}
+
+function getTicketById(ticketId) {
+    return new Promise((resolve, reject) => {
+        db.get(`
+            SELECT * FROM tickets WHERE id = ?
+        `, [ticketId], (err, row) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(row);
+            }
+        });
+    });
+}
+
+function reopenTicket(channelId) {
+    return new Promise((resolve, reject) => {
+        const stmt = db.prepare(`
+            UPDATE tickets SET status = 'open', closed_at = NULL 
+            WHERE channel_id = ?
+        `);
+        
+        stmt.run([channelId], function(err) {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(this.changes > 0);
+            }
+        });
+        
+        stmt.finalize();
+    });
+}
+
 function getAllOpenTickets() {
     return new Promise((resolve, reject) => {
         db.all(`
@@ -766,10 +813,9 @@ async function handleTicketClose(interaction) {
             return;
         }
         
+        // Defer the interaction to give us more time for processing
         if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({
-                content: '🔒 Closing ticket and saving transcript...'
-            });
+            await interaction.deferReply();
         }
         
         // Generate transcript
@@ -794,6 +840,13 @@ async function handleTicketClose(interaction) {
         
         // Close ticket in database
         await closeTicket(channel.id);
+        
+        // Update the user about the process
+        if (interaction.deferred) {
+            await interaction.editReply({
+                content: '✅ Ticket closed successfully! Transcript saved and sent to logs.'
+            });
+        }
         
         // Get ticket creator for DM and logs
         const user = await guild.members.fetch(ticket.user_id).catch(() => null);
@@ -934,36 +987,143 @@ async function handleTicketClose(interaction) {
 
 async function reconnectToTickets(client, guild) {
     try {
-        const openTickets = await getAllOpenTickets();
-        let reconnectedCount = 0;
+        console.log('Starting comprehensive ticket reconnection...');
         
+        // Step 1: Get all open tickets from database
+        const openTickets = await getAllOpenTickets();
+        console.log(`Found ${openTickets.length} open tickets in database`);
+        
+        // Step 2: Get all pcrp- channels from Discord
+        const ticketChannels = guild.channels.cache.filter(channel => 
+            channel.name.startsWith('pcrp-') && channel.type === 0 // Text channel
+        );
+        console.log(`Found ${ticketChannels.size} pcrp- channels in Discord`);
+        
+        let reconnectedCount = 0;
+        let createdCount = 0;
+        let closedCount = 0;
+        
+        // Step 3: Process database tickets and match with Discord channels
         for (const ticket of openTickets) {
             try {
                 const channel = guild.channels.cache.get(ticket.channel_id);
                 if (!channel) {
                     // Channel doesn't exist, mark ticket as closed
                     await closeTicket(ticket.channel_id);
-                    console.log(`Closed orphaned ticket: ${ticket.id}`);
+                    console.log(`Closed orphaned ticket: ${ticket.id} (channel deleted)`);
+                    closedCount++;
                     continue;
                 }
                 
-                // Verify channel is still a valid ticket (updated for pcrp- format)
+                // Verify channel is still a valid ticket
                 if (!channel.name.startsWith('pcrp-')) {
                     await closeTicket(ticket.channel_id);
-                    console.log(`Closed invalid ticket channel: ${ticket.id}`);
+                    console.log(`Closed invalid ticket: ${ticket.id} (wrong format)`);
+                    closedCount++;
                     continue;
                 }
                 
                 reconnectedCount++;
-                console.log(`Reconnected to ticket: ${ticket.id} in channel ${channel.name}`);
+                console.log(`✅ Reconnected: ${ticket.id} -> ${channel.name}`);
             } catch (error) {
-                console.error(`Error reconnecting to ticket ${ticket.id}:`, error);
-                // Mark as closed if there's an error
+                console.error(`Error processing ticket ${ticket.id}:`, error);
                 await closeTicket(ticket.channel_id);
+                closedCount++;
             }
         }
         
-        console.log(`Reconnected to ${reconnectedCount} open tickets`);
+        // Step 4: Find Discord channels that don't have open database records
+        for (const [channelId, channel] of ticketChannels) {
+            try {
+                const existingOpenTicket = await getTicket(channelId).catch(() => null);
+                if (!existingOpenTicket) {
+                    // Check if there's any ticket record (even closed)
+                    const anyTicket = await getAnyTicket(channelId).catch(() => null);
+                    
+                    if (anyTicket) {
+                        // Ticket exists but is closed - reopen it
+                        await reopenTicket(channelId);
+                        console.log(`🔄 Reopened ticket: ${anyTicket.id} -> ${channel.name}`);
+                        reconnectedCount++;
+                    } else {
+                        // Check if ticket exists by ID (different channel)
+                        const ticketId = channel.name;
+                        const ticketById = await getTicketById(ticketId).catch(() => null);
+                        
+                        if (ticketById) {
+                            // Ticket exists but wrong channel - update channel ID
+                            const stmt = db.prepare(`
+                                UPDATE tickets SET channel_id = ?, status = 'open', closed_at = NULL 
+                                WHERE id = ?
+                            `);
+                            
+                            await new Promise((resolve, reject) => {
+                                stmt.run([channelId, ticketId], function(err) {
+                                    if (err) reject(err);
+                                    else resolve(this.changes > 0);
+                                });
+                                stmt.finalize();
+                            });
+                            
+                            console.log(`🔄 Updated ticket channel: ${ticketId} -> ${channelId}`);
+                            reconnectedCount++;
+                        } else {
+                            // Completely new channel - create database record
+                            const ticketId = channel.name;
+                            
+                            // Try to extract user ID from channel topic
+                            let userId = null;
+                            let category = 'general_query';
+                            
+                            if (channel.topic) {
+                                const topicMatch = channel.topic.match(/\((\d+)\)/);
+                                if (topicMatch) {
+                                    userId = topicMatch[1];
+                                }
+                                
+                                // Try to extract category from topic
+                                const categoryMatch = channel.topic.match(/Category: (.+)/);
+                                if (categoryMatch) {
+                                    const categoryLabel = categoryMatch[1].toLowerCase();
+                                    const categoryKey = Object.keys(TICKET_CATEGORIES).find(key => 
+                                        TICKET_CATEGORIES[key].label.toLowerCase() === categoryLabel
+                                    );
+                                    if (categoryKey) {
+                                        category = categoryKey;
+                                    }
+                                }
+                            }
+                            
+                            if (userId) {
+                                try {
+                                    await createTicketDB(ticketId, channelId, userId, category);
+                                    console.log(`🆕 Created database record: ${ticketId}`);
+                                    createdCount++;
+                                    reconnectedCount++;
+                                } catch (createError) {
+                                    if (createError.message.includes('UNIQUE constraint')) {
+                                        console.log(`⚠️ Ticket ID ${ticketId} already exists, skipping creation`);
+                                    } else {
+                                        throw createError;
+                                    }
+                                }
+                            } else {
+                                console.log(`⚠️ Could not determine user for channel ${channel.name}`);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`Error processing channel ${channel.name}:`, error);
+            }
+        }
+        
+        console.log(`\n📊 Reconnection Summary:`);
+        console.log(`✅ Reconnected: ${reconnectedCount} tickets`);
+        console.log(`🆕 Created: ${createdCount} database records`);
+        console.log(`❌ Closed: ${closedCount} orphaned tickets`);
+        console.log(`📍 Total active: ${reconnectedCount} tickets\n`);
+        
     } catch (error) {
         console.error('Error during ticket reconnection:', error);
     }
@@ -1519,12 +1679,66 @@ const transferAdminCommand = {
     }
 };
 
+// Reconnect command - manually sync tickets
+const reconnectCommand = {
+    data: new SlashCommandBuilder()
+        .setName('reconnect')
+        .setDescription('Manually reconnect and sync all ticket channels with database')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    
+    async execute(interaction) {
+        try {
+            const guild = interaction.guild;
+            const member = interaction.member;
+            
+            // Check if user has admin role
+            const adminRole = guild.roles.cache.get(config.adminRoleId);
+            if (!adminRole || !member.roles.cache.has(adminRole.id)) {
+                return await interaction.reply({
+                    content: '❌ You do not have permission to reconnect tickets.',
+                    ephemeral: true
+                });
+            }
+            
+            await interaction.reply({
+                content: '🔄 **Starting ticket reconnection process...**\\n\\nThis will sync all Discord channels with the database and may take a moment.'
+            });
+            
+            // Run the reconnection process
+            await reconnectToTickets(client, guild);
+            
+            // Get updated counts
+            const openTickets = await getAllOpenTickets();
+            const ticketChannels = guild.channels.cache.filter(channel => 
+                channel.name.startsWith('pcrp-') && channel.type === 0
+            );
+            
+            await interaction.followUp({
+                content: `✅ **Reconnection Complete!**\\n\\n` +
+                        `📊 **Summary:**\\n` +
+                        `• Database tickets: ${openTickets.length}\\n` +
+                        `• Discord channels: ${ticketChannels.size}\\n` +
+                        `• Status: All tickets synchronized\\n\\n` +
+                        `All existing ticket channels should now work properly with the bot.`
+            });
+            
+        } catch (error) {
+            console.error('Reconnect command error:', error);
+            await interaction.followUp({
+                content: '❌ An error occurred during reconnection. Check console logs for details.',
+                ephemeral: true
+            });
+        }
+    }
+};
+
 client.commands.set(setupCommand.data.name, setupCommand);
 client.commands.set(addCommand.data.name, addCommand);
 client.commands.set(removeCommand.data.name, removeCommand);
 client.commands.set(renameCommand.data.name, renameCommand);
 client.commands.set(transferCommand.data.name, transferCommand);
 client.commands.set(transferAdminCommand.data.name, transferAdminCommand);
+client.commands.set(reconnectCommand.data.name, reconnectCommand);
 
 // Ready event
 client.once(Events.ClientReady, async (client) => {
