@@ -737,12 +737,28 @@ async function handleTicketClaim(interaction) {
         }
         
         // Get ticket from database
-        const ticket = await getTicket(channel.id);
+        let ticket = await getTicket(channel.id);
         if (!ticket) {
-            return await interaction.reply({
-                content: '❌ This is not a valid ticket channel.',
-                ephemeral: true
-            });
+            // Try auto-reconnect first
+            const reconnected = await autoReconnectOnError(client, channel.id);
+            
+            if (reconnected) {
+                // Try to get ticket again after reconnection
+                ticket = await getTicket(channel.id).catch(() => null);
+                if (ticket) {
+                    console.log(`✅ Auto-reconnect successful for ticket claim in ${channel.name}`);
+                } else {
+                    return await interaction.reply({
+                        content: '❌ This is not a valid ticket channel.',
+                        ephemeral: true
+                    });
+                }
+            } else {
+                return await interaction.reply({
+                    content: '❌ This is not a valid ticket channel.',
+                    ephemeral: true
+                });
+            }
         }
         
         if (ticket.claimed_by) {
@@ -788,16 +804,35 @@ async function handleTicketClose(interaction) {
         
         // Check if user has admin role or is the ticket creator
         const adminRole = guild.roles.cache.get(config.adminRoleId);
-        const ticket = await getTicket(channel.id);
+        let ticket = await getTicket(channel.id);
         
         if (!ticket) {
-            if (!interaction.replied && !interaction.deferred) {
-                return await interaction.reply({
-                    content: '❌ This is not a valid ticket channel.',
-                    ephemeral: true
-                });
+            // Try auto-reconnect first
+            const reconnected = await autoReconnectOnError(client, channel.id);
+            
+            if (reconnected) {
+                // Try to get ticket again after reconnection
+                ticket = await getTicket(channel.id).catch(() => null);
+                if (ticket) {
+                    console.log(`✅ Auto-reconnect successful for ticket close in ${channel.name}`);
+                } else {
+                    if (!interaction.replied && !interaction.deferred) {
+                        return await interaction.reply({
+                            content: '❌ This is not a valid ticket channel.',
+                            ephemeral: true
+                        });
+                    }
+                    return;
+                }
+            } else {
+                if (!interaction.replied && !interaction.deferred) {
+                    return await interaction.reply({
+                        content: '❌ This is not a valid ticket channel.',
+                        ephemeral: true
+                    });
+                }
+                return;
             }
-            return;
         }
         
         const isAdmin = adminRole && member.roles.cache.has(adminRole.id);
@@ -1679,58 +1714,56 @@ const transferAdminCommand = {
     }
 };
 
-// Reconnect command - manually sync tickets
-const reconnectCommand = {
-    data: new SlashCommandBuilder()
-        .setName('reconnect')
-        .setDescription('Manually reconnect and sync all ticket channels with database')
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+// Automatic reconnection system
+let autoReconnectInterval = null;
+
+function startAutoReconnect(client) {
+    // Clear any existing interval
+    if (autoReconnectInterval) {
+        clearInterval(autoReconnectInterval);
+    }
     
-    async execute(interaction) {
+    // Run reconnection every 5 minutes
+    autoReconnectInterval = setInterval(async () => {
         try {
-            const guild = interaction.guild;
-            const member = interaction.member;
-            
-            // Check if user has admin role
-            const adminRole = guild.roles.cache.get(config.adminRoleId);
-            if (!adminRole || !member.roles.cache.has(adminRole.id)) {
-                return await interaction.reply({
-                    content: '❌ You do not have permission to reconnect tickets.',
-                    ephemeral: true
-                });
+            const guild = client.guilds.cache.get(config.guildId);
+            if (guild) {
+                console.log('🔄 Running automatic ticket synchronization...');
+                await reconnectToTickets(client, guild);
             }
-            
-            await interaction.reply({
-                content: '🔄 **Starting ticket reconnection process...**\\n\\nThis will sync all Discord channels with the database and may take a moment.'
-            });
-            
-            // Run the reconnection process
+        } catch (error) {
+            console.error('Auto-reconnect error:', error);
+        }
+    }, 5 * 60 * 1000); // 5 minutes
+    
+    console.log('✅ Automatic ticket synchronization started (runs every 5 minutes)');
+}
+
+function stopAutoReconnect() {
+    if (autoReconnectInterval) {
+        clearInterval(autoReconnectInterval);
+        autoReconnectInterval = null;
+        console.log('🛑 Automatic ticket synchronization stopped');
+    }
+}
+
+// Trigger reconnection when ticket not found
+async function autoReconnectOnError(client, channelId) {
+    try {
+        const guild = client.guilds.cache.get(config.guildId);
+        if (guild) {
+            console.log(`🔄 Auto-reconnecting due to missing ticket: ${channelId}`);
             await reconnectToTickets(client, guild);
             
-            // Get updated counts
-            const openTickets = await getAllOpenTickets();
-            const ticketChannels = guild.channels.cache.filter(channel => 
-                channel.name.startsWith('pcrp-') && channel.type === 0
-            );
-            
-            await interaction.followUp({
-                content: `✅ **Reconnection Complete!**\\n\\n` +
-                        `📊 **Summary:**\\n` +
-                        `• Database tickets: ${openTickets.length}\\n` +
-                        `• Discord channels: ${ticketChannels.size}\\n` +
-                        `• Status: All tickets synchronized\\n\\n` +
-                        `All existing ticket channels should now work properly with the bot.`
-            });
-            
-        } catch (error) {
-            console.error('Reconnect command error:', error);
-            await interaction.followUp({
-                content: '❌ An error occurred during reconnection. Check console logs for details.',
-                ephemeral: true
-            });
+            // Check if ticket is now available
+            const ticket = await getTicket(channelId).catch(() => null);
+            return ticket !== null;
         }
+    } catch (error) {
+        console.error('Auto-reconnect on error failed:', error);
     }
-};
+    return false;
+}
 
 client.commands.set(setupCommand.data.name, setupCommand);
 client.commands.set(addCommand.data.name, addCommand);
@@ -1738,7 +1771,6 @@ client.commands.set(removeCommand.data.name, removeCommand);
 client.commands.set(renameCommand.data.name, renameCommand);
 client.commands.set(transferCommand.data.name, transferCommand);
 client.commands.set(transferAdminCommand.data.name, transferAdminCommand);
-client.commands.set(reconnectCommand.data.name, reconnectCommand);
 
 // Ready event
 client.once(Events.ClientReady, async (client) => {
@@ -1765,6 +1797,9 @@ client.once(Events.ClientReady, async (client) => {
         // Reconnect to existing open tickets
         console.log('Reconnecting to open tickets...');
         await reconnectToTickets(client, guild);
+        
+        // Start automatic reconnection system
+        startAutoReconnect(client);
         
         console.log('Bot initialization complete!');
         

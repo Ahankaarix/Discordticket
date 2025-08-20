@@ -43,7 +43,8 @@ The bot is built on Discord.js v14 with a modular architecture using:
 ## Event Handling Architecture
 - **Interaction router**: Single interaction handler that routes slash commands, select menus, button interactions, and modal submissions
 - **Ready event**: Bot initialization, ticket panel setup, and reconnection to existing tickets
-- **Automatic reconnection**: Detects and reconnects to open tickets when bot restarts using pcrp- naming format
+- **Automatic synchronization**: Runs every 5 minutes to keep Discord channels and database in sync
+- **Real-time reconnection**: Auto-reconnects when ticket validation fails during operations
 - **Feedback system**: Handles star ratings, text feedback modals, and automatic channel forwarding
 - **Error handling**: Comprehensive try-catch blocks with interaction reply checks to prevent double-acknowledgment errors
 
