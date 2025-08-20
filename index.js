@@ -1284,11 +1284,148 @@ const transferCommand = {
     }
 };
 
+// Transfer admin command - notify specific admin about ticket
+const transferAdminCommand = {
+    data: new SlashCommandBuilder()
+        .setName('transferadmin')
+        .setDescription('Notify a specific admin about this ticket via DM')
+        .addUserOption(option =>
+            option.setName('admin')
+                .setDescription('The admin to notify about this ticket')
+                .setRequired(true))
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+    
+    async execute(interaction) {
+        try {
+            const guild = interaction.guild;
+            const member = interaction.member;
+            const channel = interaction.channel;
+            const targetAdmin = interaction.options.getUser('admin');
+            
+            // Check if user has admin role
+            const adminRole = guild.roles.cache.get(config.adminRoleId);
+            if (!adminRole || !member.roles.cache.has(adminRole.id)) {
+                return await interaction.reply({
+                    content: '❌ You do not have permission to transfer tickets to admins.',
+                    ephemeral: true
+                });
+            }
+            
+            // Check if this is a ticket channel
+            const ticket = await getTicket(channel.id);
+            if (!ticket) {
+                return await interaction.reply({
+                    content: '❌ This command can only be used in ticket channels.',
+                    ephemeral: true
+                });
+            }
+            
+            // Get target admin as guild member
+            const targetMember = await guild.members.fetch(targetAdmin.id).catch(() => null);
+            if (!targetMember) {
+                return await interaction.reply({
+                    content: '❌ Could not find that user in this server.',
+                    ephemeral: true
+                });
+            }
+            
+            // Check if target user is an admin
+            if (!targetMember.roles.cache.has(adminRole.id)) {
+                return await interaction.reply({
+                    content: '❌ The specified user does not have admin permissions.',
+                    ephemeral: true
+                });
+            }
+            
+            // Get ticket details
+            const ticketCreator = await guild.members.fetch(ticket.user_id).catch(() => null);
+            const categoryInfo = TICKET_CATEGORIES[ticket.category];
+            const claimedBy = ticket.claimed_by ? await guild.members.fetch(ticket.claimed_by).catch(() => null) : null;
+            
+            // Send DM to target admin
+            try {
+                await targetAdmin.send({
+                    content: `🚨 **Ticket Transfer Notification**\n\n` +
+                            `Hello ${targetAdmin.username}! You have been assigned to handle a support ticket.\n\n` +
+                            `**Ticket Information:**\n` +
+                            `• **Channel:** ${channel.toString()} - [Jump to Ticket](https://discord.com/channels/${guild.id}/${channel.id})\n` +
+                            `• **Ticket ID:** ${ticket.id}\n` +
+                            `• **Category:** ${categoryInfo ? categoryInfo.label : 'Unknown'} ${categoryInfo ? categoryInfo.emoji : ''}\n` +
+                            `• **Created by:** ${ticketCreator ? ticketCreator.user.tag : 'Unknown User'}\n` +
+                            `• **Currently claimed by:** ${claimedBy ? claimedBy.user.tag : 'Unclaimed'}\n` +
+                            `• **Transferred by:** ${member.user.tag}\n` +
+                            `• **Server:** ${guild.name}\n` +
+                            `• **Created:** ${new Date(ticket.created_at).toLocaleString()}\n\n` +
+                            `🔗 **Direct Link:** https://discord.com/channels/${guild.id}/${channel.id}\n\n` +
+                            `Please click the link above or use the channel mention to access the ticket and provide assistance.`
+                });
+                
+                // Add the notified admin to the ticket channel
+                await channel.permissionOverwrites.edit(targetAdmin.id, {
+                    ViewChannel: true,
+                    SendMessages: true,
+                    ReadMessageHistory: true,
+                    ManageMessages: true
+                });
+                
+                await interaction.reply({
+                    content: `✅ **Admin Notified Successfully**\n\n` +
+                            `${targetAdmin.toString()} has been:\n` +
+                            `• Sent a DM with ticket details and direct link\n` +
+                            `• Added to this ticket channel with full permissions\n` +
+                            `• Provided with all necessary information to assist`
+                });
+                
+                // Send notification in ticket
+                await channel.send({
+                    content: `📢 **Admin Transfer Notification**\n\n` +
+                            `${targetAdmin.toString()} has been notified about this ticket by ${member.toString()} and added to provide assistance.`
+                });
+                
+                console.log(`Ticket ${ticket.id} transferred to admin ${targetAdmin.tag} by ${member.user.tag}`);
+                
+            } catch (dmError) {
+                console.log(`Could not send DM to ${targetAdmin.tag}: ${dmError.message}`);
+                
+                // Still add them to the channel even if DM fails
+                await channel.permissionOverwrites.edit(targetAdmin.id, {
+                    ViewChannel: true,
+                    SendMessages: true,
+                    ReadMessageHistory: true,
+                    ManageMessages: true
+                });
+                
+                await interaction.reply({
+                    content: `⚠️ **Partial Success**\n\n` +
+                            `${targetAdmin.toString()} has been added to this ticket but could not receive a DM notification.\n` +
+                            `**Reason:** ${dmError.message}\n\n` +
+                            `They now have access to this channel and can provide assistance.`
+                });
+                
+                // Notify in channel about the DM failure
+                await channel.send({
+                    content: `📢 **Admin Added to Ticket**\n\n` +
+                            `${targetAdmin.toString()} has been added to this ticket by ${member.toString()}. ` +
+                            `(DM notification failed - they may have DMs disabled)`
+                });
+            }
+            
+        } catch (error) {
+            console.error('Transfer admin command error:', error);
+            await interaction.reply({
+                content: '❌ An error occurred while transferring the ticket to the admin.',
+                ephemeral: true
+            });
+        }
+    }
+};
+
 client.commands.set(setupCommand.data.name, setupCommand);
 client.commands.set(addCommand.data.name, addCommand);
 client.commands.set(removeCommand.data.name, removeCommand);
 client.commands.set(renameCommand.data.name, renameCommand);
 client.commands.set(transferCommand.data.name, transferCommand);
+client.commands.set(transferAdminCommand.data.name, transferAdminCommand);
 
 // Ready event
 client.once(Events.ClientReady, async (client) => {
