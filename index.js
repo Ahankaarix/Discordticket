@@ -1561,9 +1561,27 @@ async function sendAutoResponse(channel, user, category) {
     }
 }
 
-// Keyword detection system
+// Keyword detection system with duplicate prevention
 async function handleKeywordResponse(message) {
     const content = message.content.toLowerCase();
+    const channel = message.channel;
+    
+    // Check if bot recently responded to avoid spam
+    try {
+        const recentMessages = await channel.messages.fetch({ limit: 5 });
+        const recentBotReplies = recentMessages.filter(msg => 
+            msg.author.bot && 
+            msg.author.id === client.user.id && 
+            (Date.now() - msg.createdTimestamp) < 30000 // Within 30 seconds
+        );
+        
+        // If bot replied recently, don't send another auto-response
+        if (recentBotReplies.size > 0) {
+            return;
+        }
+    } catch (error) {
+        console.error('Error checking recent messages:', error);
+    }
     
     // Check for PayPal keyword
     if (content.includes('paypal')) {
@@ -1573,7 +1591,7 @@ async function handleKeywordResponse(message) {
     
     // Check for UPI keyword
     if (content.includes('upi')) {
-        await message.reply('💳 **UPI Payment ID:**\ndavidbarma19-4@okicici');
+        await message.reply('💳 **UPI Payment ID:**\ndavidbarma9-4@okicici');
         return;
     }
     
