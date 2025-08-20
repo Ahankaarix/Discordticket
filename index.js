@@ -1179,7 +1179,7 @@ async function handleTicketCreation(interaction) {
             channel.topic.includes(user.id)
         );
         
-        await interaction.deferReply({ flags: 64 });
+        await interaction.deferReply({ ephemeral: true });
         
         if (existingTickets.size > 0) {
             return await interaction.editReply({
@@ -1207,7 +1207,7 @@ async function handleTicketCreation(interaction) {
         } else if (!interaction.replied) {
             await interaction.reply({
                 content: '❌ An error occurred while creating your ticket.',
-                flags: 64
+                ephemeral: true
             });
         }
     }
@@ -1577,7 +1577,18 @@ async function handleKeywordResponse(message) {
         return;
     }
     
-    // Refund auto-response removed per user request
+    // Check for refund keyword
+    if (content.includes('refund')) {
+        await message.reply({
+            embeds: [{
+                title: '⚠️ No Refund Policy',
+                description: 'All payments made are considered an investment into the server.\nOnce a purchase is completed, refunds will not be provided under any circumstances.',
+                color: 0xff0000,
+                footer: { text: 'PCRP Support Policy' }
+            }]
+        });
+        return;
+    }
     
     // Check for item missing, inventory, or report keywords
     if (content.includes('item missing') || content.includes('inventory') || content.includes('missing item') || 
