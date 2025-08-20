@@ -6,6 +6,9 @@ This is a Discord ticket system bot built with Discord.js v14 and SQLite. The bo
 - **Command Registration System**: Successfully migrated from hardcoded commands to file-based command loading with Discord API registration
 - **Slash Commands Working**: All 6 slash commands (/setup, /add, /remove, /rename, /transfer, /transferadmin) now properly registered and available in Discord
 - **Bot Connection**: Bot connects as "PCRP TICKET#5559" with full functionality restored
+- **One-Time Response System**: Implemented per-user keyword response tracking to prevent duplicate auto-responses
+- **Comprehensive Documentation**: Added detailed README with setup guides for AWS Linux and Windows hosting
+- **Fixed Interaction Errors**: Resolved duplicate acknowledgment issues in transferadmin and feedback systems
 
 # User Preferences
 
